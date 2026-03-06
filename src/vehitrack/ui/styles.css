@@ -1,9 +1,26 @@
+:root {
+  --panel-bg: #0f0f10;
+  --panel-border: #222222;
+  --panel-text: #f1f1f1;
+  --tile-bg: #141417;
+  --tile-border: #2a2a2c;
+  --sub-text: #b9bcc4;
+  --button-bg: #1a1a1d;
+  --button-border: #2a2a2c;
+  --button-text: #ffffff;
+  --button-active-bg: #2d6df6;
+  --button-active-border: #5b8cff;
+  --button-active-text: #ffffff;
+  --fallback-bg: #111214;
+  --fallback-border: #2a2a2c;
+}
+
 html, body {
   height: 100%;
   margin: 0;
   font-family: system-ui, sans-serif;
   background: #0b0b0c;
-  color: #f1f1f1;
+  color: var(--panel-text);
 }
 
 #root {
@@ -12,9 +29,29 @@ html, body {
   grid-template-columns: 1fr 360px;
 }
 
-#map {
+#mapWrap {
   position: relative;
-  background: #111; /* will be covered by Leaflet if present */
+  min-width: 0;
+}
+
+#map {
+  position: absolute;
+  inset: 0;
+  background: #111;
+}
+
+#mapStatus {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 2;
+  max-width: 60%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #ffffff;
+  background: rgba(10, 10, 12, 0.75);
+  backdrop-filter: blur(8px);
 }
 
 #panel {
@@ -22,23 +59,51 @@ html, body {
   flex-direction: column;
   gap: 10px;
   padding: 12px;
-  border-left: 1px solid #222;
-  background: #0f0f10;
+  border-left: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  color: var(--panel-text);
 }
 
-.row { display: flex; gap: 10px; }
+.row {
+  display: flex;
+  gap: 10px;
+}
+
+.compact-row button {
+  padding: 12px 10px;
+  font-size: 14px;
+}
 
 button {
   flex: 1;
   padding: 14px 10px;
   font-size: 16px;
-  border: 1px solid #2a2a2c;
-  background: #1a1a1d;
-  color: #fff;
+  border: 1px solid var(--button-border);
+  background: var(--button-bg);
+  color: var(--button-text);
   border-radius: 10px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
 }
 
-button:active { transform: translateY(1px); }
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+button[data-active="true"] {
+  background: var(--button-active-bg);
+  border-color: var(--button-active-border);
+  color: var(--button-active-text);
+}
 
 #stats {
   display: grid;
@@ -47,19 +112,38 @@ button:active { transform: translateY(1px); }
 }
 
 .tile {
-  border: 1px solid #2a2a2c;
+  border: 1px solid var(--tile-border);
   border-radius: 10px;
   padding: 10px;
-  background: #141417;
+  background: var(--tile-bg);
 }
 
-.tile .k { font-size: 12px; opacity: 0.75; }
-.tile .v { font-size: 18px; font-weight: 700; margin-top: 4px; }
+.tile .k {
+  font-size: 12px;
+  color: var(--sub-text);
+}
+
+.tile .v {
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: 4px;
+}
 
 #fallback {
-  border: 1px dashed #2a2a2c;
+  border: 1px dashed var(--fallback-border);
   border-radius: 10px;
   padding: 10px;
-  color: #ddd;
+  background: var(--fallback-bg);
+  color: var(--panel-text);
   font-size: 13px;
+}
+
+.maplibregl-ctrl-group {
+  border: none;
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+}
+
+.maplibregl-ctrl button {
+  border-radius: 0;
 }

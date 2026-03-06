@@ -4,15 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
   <title>vehitrack</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <link rel="stylesheet" href="/static/styles.css">
-  <!-- Optional (offline) Leaflet assets you can vendor later:
-  <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
-  <script src="/static/vendor/leaflet/leaflet.js"></script>
-  -->
 </head>
 <body>
   <div id="root">
-    <div id="map"></div>
+    <div id="mapWrap">
+      <div id="map"></div>
+      <div id="mapStatus">Loading map…</div>
+    </div>
+
     <div id="panel">
       <div class="row">
         <button id="startBtn">Start Trip</button>
@@ -23,6 +24,16 @@
         <button id="csvBtn">Export CSV</button>
         <button id="gpxBtn">Export GPX</button>
         <button id="kmlBtn">Export KML</button>
+      </div>
+
+      <div class="row compact-row">
+        <button data-theme="light">Light</button>
+        <button data-theme="dark">Dark</button>
+        <button data-theme="amethyst">Amethyst</button>
+      </div>
+
+      <div class="row">
+        <button id="satelliteBtn">Satellite N/A</button>
       </div>
 
       <div id="stats">
@@ -41,6 +52,7 @@
     </div>
   </div>
 
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

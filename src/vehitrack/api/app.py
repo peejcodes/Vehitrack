@@ -38,6 +38,12 @@ class Settings:
 
     # tiles
     mbtiles_path: Optional[str] = None
+    vector_tilejson_url: Optional[str] = None
+    satellite_tiles_url: Optional[str] = None
+    satellite_attribution: str = ""
+    satellite_minzoom: int = 0
+    satellite_maxzoom: int = 19
+    satellite_tile_size: int = 256
 
     @staticmethod
     def from_env() -> "Settings":
@@ -56,6 +62,12 @@ class Settings:
         s.max_speed_mps = float(os.getenv("VEHITRACK_MAX_SPEED_MPS", str(s.max_speed_mps)))
 
         s.mbtiles_path = os.getenv("VEHITRACK_MBTILES", s.mbtiles_path)
+        s.vector_tilejson_url = os.getenv("VEHITRACK_VECTOR_TILEJSON_URL", s.vector_tilejson_url)
+        s.satellite_tiles_url = os.getenv("VEHITRACK_SATELLITE_TILES_URL", s.satellite_tiles_url)
+        s.satellite_attribution = os.getenv("VEHITRACK_SATELLITE_ATTRIBUTION", s.satellite_attribution)
+        s.satellite_minzoom = int(os.getenv("VEHITRACK_SATELLITE_MINZOOM", str(s.satellite_minzoom)))
+        s.satellite_maxzoom = int(os.getenv("VEHITRACK_SATELLITE_MAXZOOM", str(s.satellite_maxzoom)))
+        s.satellite_tile_size = int(os.getenv("VEHITRACK_SATELLITE_TILE_SIZE", str(s.satellite_tile_size)))
         return s
 
 
@@ -183,6 +195,18 @@ async def index() -> str:
 @app.get("/api/state")
 async def api_state() -> Dict[str, Any]:
     return await hub.get_snapshot()
+
+
+@app.get("/api/ui-config")
+async def api_ui_config() -> Dict[str, Any]:
+    return {
+        "vector_tilejson_url": settings.vector_tilejson_url,
+        "satellite_tiles_url": settings.satellite_tiles_url,
+        "satellite_attribution": settings.satellite_attribution,
+        "satellite_minzoom": settings.satellite_minzoom,
+        "satellite_maxzoom": settings.satellite_maxzoom,
+        "satellite_tile_size": settings.satellite_tile_size,
+    }
 
 
 # ---- API: Trips ----
