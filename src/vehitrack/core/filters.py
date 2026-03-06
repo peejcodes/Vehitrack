@@ -10,9 +10,9 @@ from .models import FixState
 
 @dataclass
 class FilterConfig:
-    max_speed_mps: float = 90.0  # ~200 mph
+    max_speed_mps: float = 90.0
     reject_time_backwards: bool = True
-
+    time_backwards_tolerance_s: float = 0.5  # NEW
 
 class JumpRejector:
     """
@@ -45,7 +45,7 @@ class JumpRejector:
         t1 = prev.ts_utc.timestamp()
         t2 = fix.ts_utc.timestamp()
 
-        if self.cfg.reject_time_backwards and t2 <= t1:
+        if self.cfg.reject_time_backwards and (t2 + self.cfg.time_backwards_tolerance_s) < t1:
             self.rejected_count += 1
             return False, "time_backwards"
 

@@ -90,9 +90,21 @@ class GpsdClient:
         speed = tpv.get("speed")  # m/s if scaled:true
         track = tpv.get("track")  # degrees
 
-        # SKY fields vary; uSat = used satellites (commonly present)
-        sats_used = sky.get("uSat") if isinstance(sky, dict) else None
-        hdop = sky.get("hdop") if isinstance(sky, dict) else None
+        sats_used = None
+        hdop = None
+
+        if isinstance(sky, dict):
+            hdop = sky.get("hdop")
+
+            if isinstance(sky.get("uSat"), (int, float)):
+                sats_used = int(sky["uSat"])
+            else:
+                sats = sky.get("satellites")
+                if isinstance(sats, list):
+                    sats_used = sum(
+                        1 for s in sats
+                        if isinstance(s, dict) and s.get("used") is True
+                    )
 
         fix_valid = mode >= 2 and isinstance(lat, (int, float)) and isinstance(lon, (int, float))
 
