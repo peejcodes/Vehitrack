@@ -19,7 +19,7 @@
 <div id="map"></div>
 
 <script>
-fetch("http://localhost:8080/usa_z15.json")
+fetch("http://localhost:8090/usa_z15.json")
   .then(r => {
     if (!r.ok) {
       throw new Error(`Failed to fetch TileJSON: ${r.status} ${r.statusText}`);

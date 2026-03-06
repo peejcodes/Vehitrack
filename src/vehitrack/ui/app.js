@@ -1,6 +1,5 @@
 let activeTripId = null;
 let lastTripForExport = null;
-let lastKnownTripId = null;
 let lastLoggedFixKey = null;
 let hasCenteredOnFix = false;
 
@@ -10,7 +9,7 @@ let mapConfig = null;
 let basemapTileJson = null;
 let satelliteAvailable = false;
 let satelliteVisible = false;
-let currentThemeName = "light";
+let currentThemeName = "dark";
 
 let currentPosition = null;
 let tripCoordinates = [];
@@ -23,20 +22,20 @@ const DEFAULT_VIEW = {
 const THEMES = {
   light: {
     label: "Light",
-    panelBg: "#0f0f10",
-    panelBorder: "#222222",
-    panelText: "#f1f1f1",
-    tileBg: "#141417",
-    tileBorder: "#2a2a2c",
-    subText: "#b9bcc4",
-    buttonBg: "#1a1a1d",
-    buttonBorder: "#2a2a2c",
-    buttonText: "#ffffff",
+    panelBg: "#f7f8fa",
+    panelBorder: "#d0d7de",
+    panelText: "#1f2328",
+    tileBg: "#ffffff",
+    tileBorder: "#d0d7de",
+    subText: "#57606a",
+    buttonBg: "#ffffff",
+    buttonBorder: "#d0d7de",
+    buttonText: "#1f2328",
     buttonActiveBg: "#2d6df6",
     buttonActiveBorder: "#5b8cff",
     buttonActiveText: "#ffffff",
-    fallbackBg: "#111214",
-    fallbackBorder: "#2a2a2c",
+    fallbackBg: "#ffffff",
+    fallbackBorder: "#d0d7de",
     mapBackground: "#f2efe9",
     earth: "#e6e0d6",
     landuse: "#d7e7c2",
@@ -129,7 +128,7 @@ function fmtSpeed(mps) {
 }
 
 function getTheme() {
-  return THEMES[currentThemeName] || THEMES.light;
+  return THEMES[currentThemeName] || THEMES.dark;
 }
 
 async function apiGet(path) {
@@ -165,42 +164,11 @@ function buildStyle(theme, tilejson, config, satVisible) {
       },
     },
     layers: [
-      {
-        id: "background",
-        type: "background",
-        paint: { "background-color": theme.mapBackground },
-      },
-      {
-        id: "earth",
-        type: "fill",
-        source: "basemap",
-        "source-layer": "earth",
-        paint: { "fill-color": theme.earth },
-      },
-      {
-        id: "landuse",
-        type: "fill",
-        source: "basemap",
-        "source-layer": "landuse",
-        paint: { "fill-color": theme.landuse },
-      },
-      {
-        id: "water",
-        type: "fill",
-        source: "basemap",
-        "source-layer": "water",
-        paint: { "fill-color": theme.water },
-      },
-      {
-        id: "boundaries",
-        type: "line",
-        source: "basemap",
-        "source-layer": "boundaries",
-        paint: {
-          "line-color": theme.boundaries,
-          "line-width": 1,
-        },
-      },
+      { id: "background", type: "background", paint: { "background-color": theme.mapBackground } },
+      { id: "earth", type: "fill", source: "basemap", "source-layer": "earth", paint: { "fill-color": theme.earth } },
+      { id: "landuse", type: "fill", source: "basemap", "source-layer": "landuse", paint: { "fill-color": theme.landuse } },
+      { id: "water", type: "fill", source: "basemap", "source-layer": "water", paint: { "fill-color": theme.water } },
+      { id: "boundaries", type: "line", source: "basemap", "source-layer": "boundaries", paint: { "line-color": theme.boundaries, "line-width": 1 } },
       {
         id: "roads",
         type: "line",
@@ -208,13 +176,7 @@ function buildStyle(theme, tilejson, config, satVisible) {
         "source-layer": "roads",
         paint: {
           "line-color": theme.roads,
-          "line-width": [
-            "interpolate", ["linear"], ["zoom"],
-            5, 0.5,
-            10, 1.2,
-            14, 2.4,
-            15, 3.2,
-          ],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.5, 10, 1.2, 14, 2.4, 15, 3.2],
         },
       },
       {
@@ -226,12 +188,7 @@ function buildStyle(theme, tilejson, config, satVisible) {
         layout: {
           "text-field": ["coalesce", ["get", "name:en"], ["get", "name"]],
           "text-font": ["Noto Sans Regular"],
-          "text-size": [
-            "interpolate", ["linear"], ["zoom"],
-            3, 10,
-            6, 12,
-            10, 14,
-          ],
+          "text-size": ["interpolate", ["linear"], ["zoom"], 3, 10, 6, 12, 10, 14],
         },
         paint: {
           "text-color": theme.placeText,
@@ -274,12 +231,8 @@ function buildStyle(theme, tilejson, config, satVisible) {
       id: "satellite",
       type: "raster",
       source: "satellite",
-      layout: {
-        visibility: satVisible ? "visible" : "none",
-      },
-      paint: {
-        "raster-opacity": satVisible ? 1 : 0,
-      },
+      layout: { visibility: satVisible ? "visible" : "none" },
+      paint: { "raster-opacity": satVisible ? 1 : 0 },
     });
   }
 
@@ -305,11 +258,9 @@ function applyChromeTheme(theme) {
 }
 
 function updateThemeButtons() {
-  const themeButtons = document.querySelectorAll("[data-theme]");
-  for (const button of themeButtons) {
-    const isActive = button.dataset.theme === currentThemeName;
-    button.dataset.active = isActive ? "true" : "false";
-  }
+  document.querySelectorAll("[data-theme]").forEach((button) => {
+    button.dataset.active = button.dataset.theme === currentThemeName ? "true" : "false";
+  });
 
   const satelliteBtn = document.getElementById("satelliteBtn");
   if (satelliteBtn) {
@@ -324,47 +275,24 @@ function updateThemeButtons() {
 function currentPositionFeature() {
   return {
     type: "FeatureCollection",
-    features: currentPosition
-      ? [{
-          type: "Feature",
-          geometry: {
-            type: "Point",
-            coordinates: currentPosition,
-          },
-          properties: {},
-        }]
-      : [],
+    features: currentPosition ? [{ type: "Feature", geometry: { type: "Point", coordinates: currentPosition }, properties: {} }] : [],
   };
 }
 
 function currentTripFeature() {
   return {
     type: "FeatureCollection",
-    features: tripCoordinates.length >= 2
-      ? [{
-          type: "Feature",
-          geometry: {
-            type: "LineString",
-            coordinates: tripCoordinates,
-          },
-          properties: {},
-        }]
-      : [],
+    features: tripCoordinates.length >= 2 ? [{ type: "Feature", geometry: { type: "LineString", coordinates: tripCoordinates }, properties: {} }] : [],
   };
 }
 
 function ensureOverlayLayers() {
   if (!map || !map.getStyle()) return;
-
   const theme = getTheme();
 
   if (!map.getSource("vehitrack-trip")) {
-    map.addSource("vehitrack-trip", {
-      type: "geojson",
-      data: currentTripFeature(),
-    });
+    map.addSource("vehitrack-trip", { type: "geojson", data: currentTripFeature() });
   }
-
   if (!map.getLayer("vehitrack-trip-line")) {
     map.addLayer({
       id: "vehitrack-trip-line",
@@ -372,24 +300,15 @@ function ensureOverlayLayers() {
       source: "vehitrack-trip",
       paint: {
         "line-color": theme.routeLine,
-        "line-width": [
-          "interpolate", ["linear"], ["zoom"],
-          5, 2,
-          10, 3,
-          15, 5,
-        ],
+        "line-width": ["interpolate", ["linear"], ["zoom"], 5, 2, 10, 3, 15, 5],
         "line-opacity": 0.95,
       },
     });
   }
 
   if (!map.getSource("vehitrack-position")) {
-    map.addSource("vehitrack-position", {
-      type: "geojson",
-      data: currentPositionFeature(),
-    });
+    map.addSource("vehitrack-position", { type: "geojson", data: currentPositionFeature() });
   }
-
   if (!map.getLayer("vehitrack-position-dot")) {
     map.addLayer({
       id: "vehitrack-position-dot",
@@ -406,13 +325,9 @@ function ensureOverlayLayers() {
 }
 
 function refreshOverlayStyle() {
-  if (!map || !mapReady) return;
+  if (!map) return;
   const theme = getTheme();
-
-  if (map.getLayer("vehitrack-trip-line")) {
-    map.setPaintProperty("vehitrack-trip-line", "line-color", theme.routeLine);
-  }
-
+  if (map.getLayer("vehitrack-trip-line")) map.setPaintProperty("vehitrack-trip-line", "line-color", theme.routeLine);
   if (map.getLayer("vehitrack-position-dot")) {
     map.setPaintProperty("vehitrack-position-dot", "circle-color", theme.positionFill);
     map.setPaintProperty("vehitrack-position-dot", "circle-stroke-color", theme.positionStroke);
@@ -420,21 +335,25 @@ function refreshOverlayStyle() {
 }
 
 function syncOverlayData() {
-  if (!map || !mapReady) return;
-
+  if (!map) return;
   const tripSource = map.getSource("vehitrack-trip");
-  if (tripSource) {
-    tripSource.setData(currentTripFeature());
-  }
-
+  if (tripSource) tripSource.setData(currentTripFeature());
   const positionSource = map.getSource("vehitrack-position");
-  if (positionSource) {
-    positionSource.setData(currentPositionFeature());
-  }
+  if (positionSource) positionSource.setData(currentPositionFeature());
+}
+
+function afterStyleReady(statusText) {
+  mapReady = true;
+  ensureOverlayLayers();
+  syncOverlayData();
+  refreshOverlayStyle();
+  setMapStatus(statusText);
 }
 
 function setMapStyle() {
   if (!map || !basemapTileJson || !mapConfig) return;
+  mapReady = false;
+  setMapStatus("Applying theme…");
   map.setStyle(buildStyle(getTheme(), basemapTileJson, mapConfig, satelliteVisible));
 }
 
@@ -444,17 +363,11 @@ async function loadTripPoints(tripId) {
     syncOverlayData();
     return;
   }
-
   try {
     const payload = await apiGet(`/api/trips/${tripId}/points`);
     const points = payload.points || [];
-    tripCoordinates = points
-      .filter((p) => p.lat_deg != null && p.lon_deg != null)
-      .map((p) => [p.lon_deg, p.lat_deg]);
-    if (tripCoordinates.length) {
-      const last = tripCoordinates[tripCoordinates.length - 1];
-      currentPosition = last;
-    }
+    tripCoordinates = points.filter((p) => p.lat_deg != null && p.lon_deg != null).map((p) => [p.lon_deg, p.lat_deg]);
+    if (tripCoordinates.length) currentPosition = tripCoordinates[tripCoordinates.length - 1];
     syncOverlayData();
   } catch (error) {
     console.error("Failed to load trip points", error);
@@ -469,7 +382,6 @@ async function refreshTrips() {
   setText("tripv", activeTripId ? `#${activeTripId}` : "no");
 
   if (activeTripId !== previousTripId) {
-    lastKnownTripId = activeTripId;
     lastLoggedFixKey = null;
     await loadTripPoints(activeTripId);
   }
@@ -498,15 +410,11 @@ async function tick() {
   if (map && state.lat_deg != null && state.lon_deg != null) {
     currentPosition = [state.lon_deg, state.lat_deg];
     syncOverlayData();
-
     if (!hasCenteredOnFix) {
       map.jumpTo({ center: currentPosition, zoom: 15 });
       hasCenteredOnFix = true;
     }
-
-    if (activeTripId && state.fix_valid) {
-      pushFixToTrip(state.lon_deg, state.lat_deg);
-    }
+    if (activeTripId && state.fix_valid) pushFixToTrip(state.lon_deg, state.lat_deg);
   }
 }
 
@@ -516,6 +424,7 @@ async function initMap() {
     return;
   }
 
+  setMapStatus("Loading UI config…");
   mapConfig = await apiGet("/api/ui-config");
   satelliteAvailable = Boolean(mapConfig.satellite_tiles_url);
   updateThemeButtons();
@@ -525,12 +434,12 @@ async function initMap() {
     return;
   }
 
+  setMapStatus("Loading vector TileJSON…");
   const tileResponse = await fetch(mapConfig.vector_tilejson_url);
-  if (!tileResponse.ok) {
-    throw new Error(`TileJSON ${tileResponse.status}`);
-  }
+  if (!tileResponse.ok) throw new Error(`TileJSON ${tileResponse.status}`);
   basemapTileJson = await tileResponse.json();
 
+  setMapStatus("Creating map…");
   map = new maplibregl.Map({
     container: "map",
     style: buildStyle(getTheme(), basemapTileJson, mapConfig, satelliteVisible),
@@ -540,20 +449,20 @@ async function initMap() {
 
   map.addControl(new maplibregl.NavigationControl(), "top-right");
 
-  map.on("style.load", () => {
-    mapReady = true;
-    ensureOverlayLayers();
-    syncOverlayData();
-    refreshOverlayStyle();
-    setMapStatus(
-      satelliteAvailable
-        ? "Vector map ready. Satellite toggle available."
-        : "Vector map ready. Satellite tiles not configured."
-    );
+  map.on("load", () => {
+    afterStyleReady(satelliteAvailable ? "Vector map ready. Satellite toggle available." : "Vector map ready. Satellite tiles not configured.");
+  });
+
+  map.on("styledata", () => {
+    if (!mapReady) {
+      afterStyleReady(satelliteAvailable ? "Theme applied. Satellite toggle available." : "Theme applied. Satellite tiles not configured.");
+    }
   });
 
   map.on("error", (event) => {
-    console.error("Map error", event && event.error ? event.error : event);
+    const error = event && event.error ? event.error : event;
+    console.error("Map error", error);
+    if (!mapReady) setMapStatus(`Map error: ${error?.message || error}`);
   });
 }
 
@@ -569,18 +478,13 @@ function bindUi() {
   });
 
   document.getElementById("csvBtn").addEventListener("click", () => {
-    if (!lastTripForExport) return;
-    download(`/api/trips/${lastTripForExport}/export.csv`);
+    if (lastTripForExport) download(`/api/trips/${lastTripForExport}/export.csv`);
   });
-
   document.getElementById("gpxBtn").addEventListener("click", () => {
-    if (!lastTripForExport) return;
-    download(`/api/trips/${lastTripForExport}/export.gpx`);
+    if (lastTripForExport) download(`/api/trips/${lastTripForExport}/export.gpx`);
   });
-
   document.getElementById("kmlBtn").addEventListener("click", () => {
-    if (!lastTripForExport) return;
-    download(`/api/trips/${lastTripForExport}/export.kml`);
+    if (lastTripForExport) download(`/api/trips/${lastTripForExport}/export.kml`);
   });
 
   document.querySelectorAll("[data-theme]").forEach((button) => {
@@ -590,19 +494,15 @@ function bindUi() {
       currentThemeName = nextTheme;
       applyChromeTheme(getTheme());
       updateThemeButtons();
-      if (map) {
-        mapReady = false;
-        setMapStyle();
-      }
+      if (map) setMapStyle();
     });
   });
 
   document.getElementById("satelliteBtn").addEventListener("click", () => {
-    if (!satelliteAvailable || !map || !map.getLayer("satellite")) return;
+    if (!satelliteAvailable || !map) return;
     satelliteVisible = !satelliteVisible;
-    map.setLayoutProperty("satellite", "visibility", satelliteVisible ? "visible" : "none");
-    map.setPaintProperty("satellite", "raster-opacity", satelliteVisible ? 1 : 0);
     updateThemeButtons();
+    setMapStyle();
   });
 }
 
@@ -622,18 +522,10 @@ function bindUi() {
   await tick();
 
   setInterval(async () => {
-    try {
-      await tick();
-    } catch (error) {
-      console.error(error);
-    }
+    try { await tick(); } catch (error) { console.error(error); }
   }, 500);
 
   setInterval(async () => {
-    try {
-      await refreshTrips();
-    } catch (error) {
-      console.error(error);
-    }
+    try { await refreshTrips(); } catch (error) { console.error(error); }
   }, 3000);
 })();
