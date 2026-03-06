@@ -1,0 +1,17 @@
+[server]
+host = "0.0.0.0"
+port = 8080
+
+[gpsd]
+host = "127.0.0.1"
+port = 2947
+
+[logging]
+db_path = "/var/lib/vehitrack/vehitrack.sqlite"
+raw_fixes = false
+min_time_s = 1.0
+min_distance_m = 7.0
+max_speed_mps = 90.0   # ~200 mph jump-reject (tune to taste)
+
+[tiles]
+mbtiles_path = "/var/lib/vehitrack/tiles.mbtiles"  # optional

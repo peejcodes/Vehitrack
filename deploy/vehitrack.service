@@ -1,0 +1,20 @@
+[Unit]
+Description=vehitrack daemon (gpsd -> api/ui -> sqlite)
+After=network.target gpsd.service
+Wants=gpsd.service
+
+[Service]
+Type=simple
+User=vehitrack
+Group=vehitrack
+Environment=VEHITRACK_HOST=0.0.0.0
+Environment=VEHITRACK_PORT=8080
+Environment=VEHITRACK_DB_PATH=/var/lib/vehitrack/vehitrack.sqlite
+# Optional tiles:
+# Environment=VEHITRACK_MBTILES=/var/lib/vehitrack/tiles.mbtiles
+ExecStart=/usr/local/bin/vehitrackd
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

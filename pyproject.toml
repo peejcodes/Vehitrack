@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling>=1.21.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vehitrack"
+version = "0.1.0"
+description = "Offline, map-first GPS logger with trips + export"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+]
+
+[project.scripts]
+vehitrackd = "vehitrack.api.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vehitrack"]

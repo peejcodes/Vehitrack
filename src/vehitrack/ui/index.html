@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <title>vehitrack</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <!-- Optional (offline) Leaflet assets you can vendor later:
+  <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+  <script src="/static/vendor/leaflet/leaflet.js"></script>
+  -->
+</head>
+<body>
+  <div id="root">
+    <div id="map"></div>
+    <div id="panel">
+      <div class="row">
+        <button id="startBtn">Start Trip</button>
+        <button id="stopBtn">Stop Trip</button>
+      </div>
+
+      <div class="row">
+        <button id="csvBtn">Export CSV</button>
+        <button id="gpxBtn">Export GPX</button>
+        <button id="kmlBtn">Export KML</button>
+      </div>
+
+      <div id="stats">
+        <div class="tile"><div class="k">Fix</div><div class="v" id="fixv">—</div></div>
+        <div class="tile"><div class="k">Speed</div><div class="v" id="speedv">—</div></div>
+        <div class="tile"><div class="k">Sats</div><div class="v" id="satsv">—</div></div>
+        <div class="tile"><div class="k">HDOP</div><div class="v" id="hdopv">—</div></div>
+        <div class="tile"><div class="k">Age</div><div class="v" id="agev">—</div></div>
+        <div class="tile"><div class="k">Trip</div><div class="v" id="tripv">—</div></div>
+      </div>
+
+      <div id="fallback">
+        <div><b>Position:</b> <span id="posv">—</span></div>
+        <div><b>Reason:</b> <span id="reasonv">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

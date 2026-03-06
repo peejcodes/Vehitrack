@@ -1,0 +1,65 @@
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #0b0b0c;
+  color: #f1f1f1;
+}
+
+#root {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 1fr 360px;
+}
+
+#map {
+  position: relative;
+  background: #111; /* will be covered by Leaflet if present */
+}
+
+#panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-left: 1px solid #222;
+  background: #0f0f10;
+}
+
+.row { display: flex; gap: 10px; }
+
+button {
+  flex: 1;
+  padding: 14px 10px;
+  font-size: 16px;
+  border: 1px solid #2a2a2c;
+  background: #1a1a1d;
+  color: #fff;
+  border-radius: 10px;
+}
+
+button:active { transform: translateY(1px); }
+
+#stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.tile {
+  border: 1px solid #2a2a2c;
+  border-radius: 10px;
+  padding: 10px;
+  background: #141417;
+}
+
+.tile .k { font-size: 12px; opacity: 0.75; }
+.tile .v { font-size: 18px; font-weight: 700; margin-top: 4px; }
+
+#fallback {
+  border: 1px dashed #2a2a2c;
+  border-radius: 10px;
+  padding: 10px;
+  color: #ddd;
+  font-size: 13px;
+}
