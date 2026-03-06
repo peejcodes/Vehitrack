@@ -254,7 +254,7 @@ async def tiles_png(z: int, x: int, y: int) -> Response:
 
 # ---- Simple health page (human readable) ----
 @app.get("/health", response_class=HTMLResponse)
-async def VEHITRACK_DB_PATH=./vehitrack.sqlite uvicorn vehitrack.api.app:app --host 0.0.0.0 --port 8080 --reloadhealth() -> str:
+async def health() -> str:
     snap = await hub.get_snapshot()
     st = snap["state"]
     age = snap["age_s"]
