@@ -254,7 +254,7 @@ async def tiles_png(z: int, x: int, y: int) -> Response:
 
 # ---- Simple health page (human readable) ----
 @app.get("/health", response_class=HTMLResponse)
-async def health() -> str:
+async def VEHITRACK_DB_PATH=./vehitrack.sqlite uvicorn vehitrack.api.app:app --host 0.0.0.0 --port 8080 --reloadhealth() -> str:
     snap = await hub.get_snapshot()
     st = snap["state"]
     age = snap["age_s"]
@@ -265,35 +265,35 @@ async def health() -> str:
     active = store.active_trip_id()
 
     return f"""
-<!doctype html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>vehitrack health</title>
-<style>
-body {{ font-family: system-ui, sans-serif; padding: 16px; }}
-.kv {{ display:flex; gap:12px; margin:6px 0; }}
-.k {{ width:160px; color:#444; }}
-.v {{ font-weight:600; }}
-</style>
-</head>
-<body>
-<h2>vehitrack</h2>
-<div class="kv"><div class="k">fix_valid</div><div class="v">{st.get("fix_valid")}</div></div>
-<div class="kv"><div class="k">fix_type</div><div class="v">{st.get("fix_type")}</div></div>
-<div class="kv"><div class="k">lat, lon</div><div class="v">{st.get("lat_deg")}, {st.get("lon_deg")}</div></div>
-<div class="kv"><div class="k">speed</div><div class="v">{st.get("speed_mps")} m/s {f"({mph:.1f} mph)" if mph is not None else ""}</div></div>
-<div class="kv"><div class="k">course</div><div class="v">{st.get("course_deg")}°</div></div>
-<div class="kv"><div class="k">sats_used</div><div class="v">{st.get("sats_used")}</div></div>
-<div class="kv"><div class="k">hdop</div><div class="v">{st.get("hdop")}</div></div>
-<div class="kv"><div class="k">age</div><div class="v">{age:.2f}s</div></div>
-<div class="kv"><div class="k">update_reason</div><div class="v">{snap.get("update_reason")}</div></div>
-<div class="kv"><div class="k">trip_active</div><div class="v">{active if active else "no"}</div></div>
-<div class="kv"><div class="k">logged_last</div><div class="v">{snap.get("logged_last")}</div></div>
-<p><a href="/">Open UI</a></p>
-</body>
-</html>
-"""
+        <!doctype html>
+        <html>
+        <head>
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>vehitrack health</title>
+        <style>
+        body {{ font-family: system-ui, sans-serif; padding: 16px; }}
+        .kv {{ display:flex; gap:12px; margin:6px 0; }}
+        .k {{ width:160px; color:#444; }}
+        .v {{ font-weight:600; }}
+        </style>
+        </head>
+        <body>
+        <h2>vehitrack</h2>
+        <div class="kv"><div class="k">fix_valid</div><div class="v">{st.get("fix_valid")}</div></div>
+        <div class="kv"><div class="k">fix_type</div><div class="v">{st.get("fix_type")}</div></div>
+        <div class="kv"><div class="k">lat, lon</div><div class="v">{st.get("lat_deg")}, {st.get("lon_deg")}</div></div>
+        <div class="kv"><div class="k">speed</div><div class="v">{st.get("speed_mps")} m/s {f"({mph:.1f} mph)" if mph is not None else ""}</div></div>
+        <div class="kv"><div class="k">course</div><div class="v">{st.get("course_deg")}°</div></div>
+        <div class="kv"><div class="k">sats_used</div><div class="v">{st.get("sats_used")}</div></div>
+        <div class="kv"><div class="k">hdop</div><div class="v">{st.get("hdop")}</div></div>
+        <div class="kv"><div class="k">age</div><div class="v">{age:.2f}s</div></div>
+        <div class="kv"><div class="k">update_reason</div><div class="v">{snap.get("update_reason")}</div></div>
+        <div class="kv"><div class="k">trip_active</div><div class="v">{active if active else "no"}</div></div>
+        <div class="kv"><div class="k">logged_last</div><div class="v">{snap.get("logged_last")}</div></div>
+        <p><a href="/">Open UI</a></p>
+        </body>
+        </html>
+        """
 
 
 def main() -> None:
