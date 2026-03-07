@@ -4,14 +4,13 @@ import asyncio
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Callable
+from typing import Any, Dict, Callable
 
 from vehitrack.core.models import FixState, now_utc
 
 
 def _parse_gpsd_time(t: Any) -> datetime:
     if isinstance(t, str) and t:
-        # gpsd often uses ISO8601 with "Z"
         s = t.replace("Z", "+00:00")
         try:
             return datetime.fromisoformat(s).astimezone(timezone.utc)
@@ -32,6 +31,7 @@ class GpsdClient:
     Connects to gpsd TCP socket, enables JSON watch, parses TPV + SKY.
     Emits FixState via callback.
     """
+
     def __init__(self, cfg: GpsdConfig, on_fix: Callable[[FixState], Any]):
         self.cfg = cfg
         self.on_fix = on_fix
@@ -48,7 +48,6 @@ class GpsdClient:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                # Back off and reconnect
                 await asyncio.sleep(self.cfg.reconnect_s)
 
     async def _run_once(self) -> None:
@@ -62,19 +61,28 @@ class GpsdClient:
                 line = await reader.readline()
                 if not line:
                     break
+
                 try:
                     msg = json.loads(line.decode("utf-8", errors="ignore").strip())
                 except json.JSONDecodeError:
                     continue
 
                 cls = msg.get("class")
+
                 if cls == "SKY":
-                    self._last_sky = msg
+                    # gpsd may emit a full SKY report followed by a reduced SKY report
+                    # containing only DOP values. Merge instead of replacing so uSat
+                    # and satellites[] are not lost before the next TPV arrives.
+                    merged = dict(self._last_sky)
+                    merged.update(msg)
+                    self._last_sky = merged
+
                 elif cls == "TPV":
                     fix = self._tpv_to_fix(msg, self._last_sky)
                     maybe = self.on_fix(fix)
                     if asyncio.iscoroutine(maybe):
                         await maybe
+
         finally:
             try:
                 writer.close()
@@ -87,8 +95,8 @@ class GpsdClient:
         lat = tpv.get("lat")
         lon = tpv.get("lon")
         alt = tpv.get("alt")
-        speed = tpv.get("speed")  # m/s if scaled:true
-        track = tpv.get("track")  # degrees
+        speed = tpv.get("speed")
+        track = tpv.get("track")
 
         sats_used = None
         hdop = None
@@ -106,7 +114,11 @@ class GpsdClient:
                         if isinstance(s, dict) and s.get("used") is True
                     )
 
-        fix_valid = mode >= 2 and isinstance(lat, (int, float)) and isinstance(lon, (int, float))
+        fix_valid = (
+            mode >= 2
+            and isinstance(lat, (int, float))
+            and isinstance(lon, (int, float))
+        )
 
         return FixState(
             ts_utc=_parse_gpsd_time(tpv.get("time")),
