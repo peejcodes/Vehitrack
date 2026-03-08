@@ -1,492 +1,282 @@
-let activeTripId = null;
-let lastTripForExport = null;
-let lastLoggedFixKey = null;
-let hasCenteredOnFix = false;
-
-let map = null;
-let mapReady = false;
-let mapConfig = null;
-let basemapTileJson = null;
-let satelliteAvailable = false;
-let satelliteVisible = false;
-let currentThemeName = "dark";
-
-let currentPosition = null;
-let tripCoordinates = [];
-
-const DEFAULT_VIEW = {
-  center: [-98.5795, 39.8283],
-  zoom: 4,
-};
-
 const THEMES = {
   light: {
-    label: "Light",
-    panelBg: "#f7f8fa",
-    panelBorder: "#d0d7de",
-    panelText: "#1f2328",
-    tileBg: "#ffffff",
-    tileBorder: "#d0d7de",
-    subText: "#57606a",
-    buttonBg: "#ffffff",
-    buttonBorder: "#d0d7de",
-    buttonText: "#1f2328",
-    buttonActiveBg: "#2d6df6",
-    buttonActiveBorder: "#5b8cff",
-    buttonActiveText: "#ffffff",
-    fallbackBg: "#ffffff",
-    fallbackBorder: "#d0d7de",
-    mapBackground: "#f2efe9",
-    earth: "#e6e0d6",
-    landuse: "#d7e7c2",
-    water: "#9ec9ff",
-    boundaries: "#8f949c",
-    roads: "#ffffff",
-    placeText: "#1f2328",
-    roadText: "#3a4048",
-    textHalo: "#ffffff",
-    routeLine: "#2d6df6",
-    routeHalo: "#ffffff",
-    positionFill: "#2d6df6",
-    positionStroke: "#ffffff",
+    chrome: { bg: "#edf1f5", panel: "#ffffff", panel2: "#eef2f7", border: "#d7dee8", text: "#122033", muted: "#5f6d7d", accent: "#356fe6", accent2: "#4f86f7" },
+    map: { background: "#f6f3ed", earth: "#ebe5d8", landuse: "#d7e8cb", water: "#9fcbff", boundaries: "#8d99a8", roads: "#ffffff", roadCasing: "#c6ccd4", placeText: "#1a2230", roadText: "#273142", halo: "#ffffff", trip: "#356fe6", position: "#ff6a3d" }
   },
   dark: {
-    label: "Dark",
-    panelBg: "#0c0e11",
-    panelBorder: "#1d2127",
-    panelText: "#edf1f7",
-    tileBg: "#11151a",
-    tileBorder: "#222933",
-    subText: "#aeb7c4",
-    buttonBg: "#151a21",
-    buttonBorder: "#27303a",
-    buttonText: "#edf1f7",
-    buttonActiveBg: "#3a78ff",
-    buttonActiveBorder: "#70a0ff",
-    buttonActiveText: "#ffffff",
-    fallbackBg: "#10141a",
-    fallbackBorder: "#27303a",
-    mapBackground: "#101418",
-    earth: "#182029",
-    landuse: "#1d2b23",
-    water: "#20384f",
-    boundaries: "#718091",
-    roads: "#7f8791",
-    placeText: "#f1f4f8",
-    roadText: "#e0e5ec",
-    textHalo: "#101418",
-    routeLine: "#59a1ff",
-    routeHalo: "#101418",
-    positionFill: "#59a1ff",
-    positionStroke: "#dfe7f2",
+    chrome: { bg: "#111418", panel: "#1a1f25", panel2: "#232a33", border: "#2f3742", text: "#eceff4", muted: "#a5afba", accent: "#6b7280", accent2: "#8b94a3" },
+    map: { background: "#0f1419", earth: "#182129", landuse: "#1c2d22", water: "#173245", boundaries: "#6a7380", roads: "#7d8591", roadCasing: "#404954", placeText: "#f1f3f7", roadText: "#d9dee6", halo: "#0f1419", trip: "#56a5ff", position: "#ff7e47" }
   },
   amethyst: {
-    label: "Amethyst",
-    panelBg: "#0c0916",
-    panelBorder: "#241d38",
-    panelText: "#f4efff",
-    tileBg: "#151125",
-    tileBorder: "#2f2550",
-    subText: "#c9bfec",
-    buttonBg: "#171128",
-    buttonBorder: "#372a61",
-    buttonText: "#f4efff",
-    buttonActiveBg: "#7734eb",
-    buttonActiveBorder: "#a27cff",
-    buttonActiveText: "#ffffff",
-    fallbackBg: "#130f22",
-    fallbackBorder: "#372a61",
-    mapBackground: "#0d0a16",
-    earth: "#161127",
-    landuse: "#1d1533",
-    water: "#211b3d",
-    boundaries: "#8e7bc7",
-    roads: "#b296ff",
-    placeText: "#f4efff",
-    roadText: "#dccfff",
-    textHalo: "#0d0a16",
-    routeLine: "#7734eb",
-    routeHalo: "#0d0a16",
-    positionFill: "#7734eb",
-    positionStroke: "#efe7ff",
-  },
+    chrome: { bg: "#120f1d", panel: "#1b1528", panel2: "#251d37", border: "#3c2c62", text: "#eee9fb", muted: "#b3a7d0", accent: "#7734eb", accent2: "#9a6cff" },
+    map: { background: "#120f1d", earth: "#1c1629", landuse: "#1f2134", water: "#271e4f", boundaries: "#7f76a2", roads: "#d7d1ea", roadCasing: "#5d4f82", placeText: "#f2eefe", roadText: "#e7ddff", halo: "#120f1d", trip: "#7734eb", position: "#c38cff" }
+  }
 };
 
-function setText(id, value) {
-  const el = document.getElementById(id);
-  if (el) el.textContent = value;
-}
+let config = null;
+let map = null;
+let mapReady = false;
+let tilejson = null;
+let currentThemeName = "dark";
+let satelliteVisible = false;
+let satelliteAvailable = false;
+let destinationMarker = null;
+let destination = null;
+let hasAutoCentered = false;
+let lastTripForExport = null;
+let activeTripId = null;
+let currentActiveLine = [];
+const GEO_SOURCE_ID = "vehitrack-overlays";
 
-function setMapStatus(message) {
-  setText("mapStatus", message);
-}
-
-function fmtSpeed(mps) {
-  if (mps == null) return "—";
-  const mph = mps * 2.2369362920544;
-  return `${mph.toFixed(1)} mph`;
-}
-
-function getTheme() {
-  return THEMES[currentThemeName] || THEMES.dark;
-}
-
-async function apiGet(path) {
-  const response = await fetch(path);
-  if (!response.ok) throw new Error(`${path} ${response.status}`);
-  return await response.json();
-}
-
-async function apiPost(path, body) {
-  const response = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : "{}",
-  });
-  if (!response.ok) throw new Error(`${path} ${response.status}`);
-  return await response.json();
-}
-
-function download(url) {
-  window.location.href = url;
-}
-
-function buildStyle(theme, tilejson, config, satVisible) {
-  const style = {
-    version: 8,
-    glyphs: "https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf",
-    sources: {
-      basemap: {
-        type: "vector",
-        tiles: tilejson.tiles,
-        minzoom: tilejson.minzoom,
-        maxzoom: tilejson.maxzoom,
-      },
-    },
-    layers: [
-      { id: "background", type: "background", paint: { "background-color": theme.mapBackground } },
-      { id: "earth", type: "fill", source: "basemap", "source-layer": "earth", paint: { "fill-color": theme.earth } },
-      { id: "landuse", type: "fill", source: "basemap", "source-layer": "landuse", paint: { "fill-color": theme.landuse } },
-      { id: "water", type: "fill", source: "basemap", "source-layer": "water", paint: { "fill-color": theme.water } },
-      { id: "boundaries", type: "line", source: "basemap", "source-layer": "boundaries", paint: { "line-color": theme.boundaries, "line-width": 1 } },
-      {
-        id: "roads",
-        type: "line",
-        source: "basemap",
-        "source-layer": "roads",
-        paint: {
-          "line-color": theme.roads,
-          "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.5, 10, 1.2, 14, 2.4, 15, 3.2],
-        },
-      },
-      {
-        id: "place-labels",
-        type: "symbol",
-        source: "basemap",
-        "source-layer": "places",
-        minzoom: 3,
-        layout: {
-          "text-field": ["coalesce", ["get", "name:en"], ["get", "name"]],
-          "text-font": ["Noto Sans Regular"],
-          "text-size": ["interpolate", ["linear"], ["zoom"], 3, 10, 6, 12, 10, 14],
-        },
-        paint: {
-          "text-color": theme.placeText,
-          "text-halo-color": theme.textHalo,
-          "text-halo-width": 1.5,
-        },
-      },
-      {
-        id: "road-labels",
-        type: "symbol",
-        source: "basemap",
-        "source-layer": "roads",
-        minzoom: 12,
-        layout: {
-          "symbol-placement": "line",
-          "text-field": ["coalesce", ["get", "name:en"], ["get", "name"]],
-          "text-font": ["Noto Sans Regular"],
-          "text-size": 11,
-        },
-        paint: {
-          "text-color": theme.roadText,
-          "text-halo-color": theme.textHalo,
-          "text-halo-width": 1.25,
-        },
-      },
-    ],
-  };
-
-  if (config.satellite_tiles_url) {
-    style.sources.satellite = {
-      type: "raster",
-      tiles: [config.satellite_tiles_url],
-      tileSize: Number(config.satellite_tile_size || 256),
-      minzoom: Number(config.satellite_minzoom || 0),
-      maxzoom: Number(config.satellite_maxzoom || 19),
-      attribution: config.satellite_attribution || "",
-    };
-
-    style.layers.splice(1, 0, {
-      id: "satellite",
-      type: "raster",
-      source: "satellite",
-      layout: { visibility: satVisible ? "visible" : "none" },
-      paint: { "raster-opacity": satVisible ? 1 : 0 },
-    });
-  }
-
-  return style;
-}
+function $(id) { return document.getElementById(id); }
+function setText(id, value) { const el = $(id); if (el) el.textContent = value; }
+function getTheme() { return THEMES[currentThemeName] || THEMES.dark; }
+function setMapStatus(message) { setText("mapStatus", message); }
+function setSearchStatus(message) { setText("searchStatus", message); }
+function speedToMph(speedMps) { return speedMps * 2.2369362920544; }
+function formatLatLon(lat, lon) { return lat == null || lon == null ? "Position: —" : `Position: ${lat.toFixed(6)}, ${lon.toFixed(6)}`; }
+function escapeHtml(text) { return String(text).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;"); }
 
 function applyChromeTheme(theme) {
   const root = document.documentElement;
-  root.style.setProperty("--panel-bg", theme.panelBg);
-  root.style.setProperty("--panel-border", theme.panelBorder);
-  root.style.setProperty("--panel-text", theme.panelText);
-  root.style.setProperty("--tile-bg", theme.tileBg);
-  root.style.setProperty("--tile-border", theme.tileBorder);
-  root.style.setProperty("--sub-text", theme.subText);
-  root.style.setProperty("--button-bg", theme.buttonBg);
-  root.style.setProperty("--button-border", theme.buttonBorder);
-  root.style.setProperty("--button-text", theme.buttonText);
-  root.style.setProperty("--button-active-bg", theme.buttonActiveBg);
-  root.style.setProperty("--button-active-border", theme.buttonActiveBorder);
-  root.style.setProperty("--button-active-text", theme.buttonActiveText);
-  root.style.setProperty("--fallback-bg", theme.fallbackBg);
-  root.style.setProperty("--fallback-border", theme.fallbackBorder);
+  root.style.setProperty("--bg", theme.chrome.bg);
+  root.style.setProperty("--panel", theme.chrome.panel);
+  root.style.setProperty("--panel-2", theme.chrome.panel2);
+  root.style.setProperty("--border", theme.chrome.border);
+  root.style.setProperty("--text", theme.chrome.text);
+  root.style.setProperty("--muted", theme.chrome.muted);
+  root.style.setProperty("--accent", theme.chrome.accent);
+  root.style.setProperty("--accent-2", theme.chrome.accent2);
+  document.body.className = `theme-${currentThemeName}`;
 }
 
 function updateThemeButtons() {
-  document.querySelectorAll("[data-theme]").forEach((button) => {
-    button.dataset.active = button.dataset.theme === currentThemeName ? "true" : "false";
-  });
-
-  const satelliteBtn = document.getElementById("satelliteBtn");
-  if (satelliteBtn) {
-    satelliteBtn.textContent = satelliteAvailable
-      ? (satelliteVisible ? "Satellite On" : "Satellite Off")
-      : "Satellite N/A";
-    satelliteBtn.disabled = !satelliteAvailable;
-    satelliteBtn.dataset.active = satelliteVisible ? "true" : "false";
-  }
-}
-
-function currentPositionFeature() {
-  return {
-    type: "FeatureCollection",
-    features: currentPosition ? [{ type: "Feature", geometry: { type: "Point", coordinates: currentPosition }, properties: {} }] : [],
-  };
-}
-
-function currentTripFeature() {
-  return {
-    type: "FeatureCollection",
-    features: tripCoordinates.length >= 2 ? [{ type: "Feature", geometry: { type: "LineString", coordinates: tripCoordinates }, properties: {} }] : [],
-  };
-}
-
-function ensureOverlayLayers() {
-  if (!map || !map.getStyle()) return;
-  const theme = getTheme();
-
-  if (!map.getSource("vehitrack-trip")) {
-    map.addSource("vehitrack-trip", { type: "geojson", data: currentTripFeature() });
-  }
-  if (!map.getLayer("vehitrack-trip-line")) {
-    map.addLayer({
-      id: "vehitrack-trip-line",
-      type: "line",
-      source: "vehitrack-trip",
-      paint: {
-        "line-color": theme.routeLine,
-        "line-width": ["interpolate", ["linear"], ["zoom"], 5, 2, 10, 3, 15, 5],
-        "line-opacity": 0.95,
-      },
-    });
-  }
-
-  if (!map.getSource("vehitrack-position")) {
-    map.addSource("vehitrack-position", { type: "geojson", data: currentPositionFeature() });
-  }
-  if (!map.getLayer("vehitrack-position-dot")) {
-    map.addLayer({
-      id: "vehitrack-position-dot",
-      type: "circle",
-      source: "vehitrack-position",
-      paint: {
-        "circle-radius": 7,
-        "circle-color": theme.positionFill,
-        "circle-stroke-width": 2,
-        "circle-stroke-color": theme.positionStroke,
-      },
-    });
-  }
-}
-
-function refreshOverlayStyle() {
-  if (!map) return;
-  const theme = getTheme();
-  if (map.getLayer("vehitrack-trip-line")) map.setPaintProperty("vehitrack-trip-line", "line-color", theme.routeLine);
-  if (map.getLayer("vehitrack-position-dot")) {
-    map.setPaintProperty("vehitrack-position-dot", "circle-color", theme.positionFill);
-    map.setPaintProperty("vehitrack-position-dot", "circle-stroke-color", theme.positionStroke);
-  }
-}
-
-function syncOverlayData() {
-  if (!map) return;
-  const tripSource = map.getSource("vehitrack-trip");
-  if (tripSource) tripSource.setData(currentTripFeature());
-  const positionSource = map.getSource("vehitrack-position");
-  if (positionSource) positionSource.setData(currentPositionFeature());
-}
-
-function afterStyleReady(statusText) {
-  mapReady = true;
-  ensureOverlayLayers();
-  syncOverlayData();
-  refreshOverlayStyle();
-  setMapStatus(statusText);
-}
-
-function setMapStyle() {
-  if (!map || !basemapTileJson || !mapConfig) return;
-  mapReady = false;
-  setMapStatus("Applying theme…");
-  map.setStyle(buildStyle(getTheme(), basemapTileJson, mapConfig, satelliteVisible));
-}
-
-async function loadTripPoints(tripId) {
-  if (!tripId) {
-    tripCoordinates = [];
-    syncOverlayData();
+  document.querySelectorAll("[data-theme]").forEach((button) => button.classList.toggle("active", button.dataset.theme === currentThemeName));
+  const satelliteBtn = $("satelliteBtn");
+  if (!satelliteBtn) return;
+  if (!satelliteAvailable) {
+    satelliteBtn.textContent = "Satellite N/A";
+    satelliteBtn.disabled = true;
+    satelliteBtn.classList.remove("active");
     return;
   }
+  satelliteBtn.disabled = false;
+  satelliteBtn.textContent = satelliteVisible ? "Satellite On" : "Satellite Off";
+  satelliteBtn.classList.toggle("active", satelliteVisible);
+}
+
+async function apiGet(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  return response.json();
+}
+
+async function apiPost(url, payload = {}) {
+  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  return response.json();
+}
+
+function buildOverlayData(snapshot) {
+  const features = [];
+  if (Array.isArray(currentActiveLine) && currentActiveLine.length >= 2) {
+    features.push({ type: "Feature", geometry: { type: "LineString", coordinates: currentActiveLine }, properties: { kind: "trip" } });
+  }
+  const st = snapshot?.state;
+  if (st?.fix_valid && st.lat_deg != null && st.lon_deg != null) {
+    features.push({ type: "Feature", geometry: { type: "Point", coordinates: [st.lon_deg, st.lat_deg] }, properties: { kind: "position" } });
+  }
+  return { type: "FeatureCollection", features };
+}
+
+function createBaseLayers(theme) {
+  const layers = [];
+  if (satelliteAvailable && satelliteVisible) {
+    layers.push({ id: "satellite", type: "raster", source: "satellite" });
+  } else {
+    layers.push(
+      { id: "background", type: "background", paint: { "background-color": theme.map.background } },
+      { id: "earth", type: "fill", source: "protomaps", "source-layer": "earth", paint: { "fill-color": theme.map.earth } },
+      { id: "landuse", type: "fill", source: "protomaps", "source-layer": "landuse", paint: { "fill-color": theme.map.landuse } },
+      { id: "water", type: "fill", source: "protomaps", "source-layer": "water", paint: { "fill-color": theme.map.water } }
+    );
+  }
+  layers.push(
+    { id: "boundaries", type: "line", source: "protomaps", "source-layer": "boundaries", paint: { "line-color": theme.map.boundaries, "line-width": 0.8 } },
+    { id: "roads-casing", type: "line", source: "protomaps", "source-layer": "roads", paint: { "line-color": theme.map.roadCasing, "line-width": ["interpolate", ["linear"], ["zoom"], 5, 1, 10, 2, 14, 4, 15, 6] } },
+    { id: "roads", type: "line", source: "protomaps", "source-layer": "roads", paint: { "line-color": theme.map.roads, "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.5, 10, 1, 14, 2, 15, 3] } },
+    { id: "place-labels", type: "symbol", source: "protomaps", "source-layer": "places", minzoom: 3, layout: { "text-field": ["coalesce", ["get", "name:en"], ["get", "name"]], "text-font": ["Noto Sans Regular"], "text-size": ["interpolate", ["linear"], ["zoom"], 3, 10, 6, 12, 10, 14] }, paint: { "text-color": theme.map.placeText, "text-halo-color": theme.map.halo, "text-halo-width": 1.5 } },
+    { id: "road-labels", type: "symbol", source: "protomaps", "source-layer": "roads", minzoom: 12, layout: { "symbol-placement": "line", "text-field": ["coalesce", ["get", "name:en"], ["get", "name"]], "text-font": ["Noto Sans Regular"], "text-size": 11 }, paint: { "text-color": theme.map.roadText, "text-halo-color": theme.map.halo, "text-halo-width": 1.5 } }
+  );
+  return layers;
+}
+
+function buildStyle(theme) {
+  const sources = { protomaps: { type: "vector", tiles: tilejson.tiles, minzoom: tilejson.minzoom, maxzoom: tilejson.maxzoom } };
+  if (satelliteAvailable) {
+    sources.satellite = { type: "raster", tiles: [config.satellite_tiles_url], tileSize: Number(config.satellite_tile_size || 256), minzoom: Number(config.satellite_minzoom || 0), maxzoom: Number(config.satellite_maxzoom || 19), attribution: config.satellite_attribution || "" };
+  }
+  return { version: 8, glyphs: "https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf", sources, layers: createBaseLayers(theme) };
+}
+
+function ensureOverlays(snapshot = null) {
+  if (!map || !map.getStyle()) return;
+  const theme = getTheme();
+  const data = buildOverlayData(snapshot || { state: null });
+  if (!map.getSource(GEO_SOURCE_ID)) {
+    map.addSource(GEO_SOURCE_ID, { type: "geojson", data });
+  } else {
+    map.getSource(GEO_SOURCE_ID).setData(data);
+  }
+  if (!map.getLayer("trip-line")) {
+    map.addLayer({ id: "trip-line", type: "line", source: GEO_SOURCE_ID, filter: ["==", ["get", "kind"], "trip"], paint: { "line-color": theme.map.trip, "line-width": 4, "line-opacity": 0.95 } });
+  } else {
+    map.setPaintProperty("trip-line", "line-color", theme.map.trip);
+  }
+  if (!map.getLayer("position-dot")) {
+    map.addLayer({ id: "position-dot", type: "circle", source: GEO_SOURCE_ID, filter: ["==", ["get", "kind"], "position"], paint: { "circle-radius": 6, "circle-color": theme.map.position, "circle-stroke-color": theme.map.halo, "circle-stroke-width": 2 } });
+  } else {
+    map.setPaintProperty("position-dot", "circle-color", theme.map.position);
+    map.setPaintProperty("position-dot", "circle-stroke-color", theme.map.halo);
+  }
+}
+
+function applyDestinationMarker() {
+  if (!map || !destination) return;
+  if (destinationMarker) { destinationMarker.remove(); destinationMarker = null; }
+  const el = document.createElement("div");
+  el.className = "destination-marker";
+  el.style.background = getTheme().chrome.accent;
+  destinationMarker = new maplibregl.Marker({ element: el }).setLngLat([destination.lon, destination.lat]).addTo(map);
+}
+
+function setSelectedDestination(result) {
+  destination = result;
+  setText("selectedDestination", `Destination: ${result.label}`);
+  if (map) {
+    applyDestinationMarker();
+    map.flyTo({ center: [result.lon, result.lat], zoom: Math.max(map.getZoom(), 14) });
+  }
+}
+
+function renderSearchResults(results) {
+  const wrap = $("searchResults");
+  wrap.innerHTML = "";
+  if (!results.length) {
+    const empty = document.createElement("div");
+    empty.className = "muted small";
+    empty.textContent = "No results.";
+    wrap.appendChild(empty);
+    return;
+  }
+  for (const result of results) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "result-item";
+    button.innerHTML = `<div class="result-name">${escapeHtml(result.name || result.label)}</div><div class="result-address">${escapeHtml(result.label)}</div>`;
+    button.addEventListener("click", () => {
+      setSelectedDestination(result);
+      setSearchStatus("Destination selected. Routing is the next step.");
+    });
+    wrap.appendChild(button);
+  }
+}
+
+async function performSearch() {
+  const query = $("searchInput").value.trim();
+  if (query.length < 2) { setSearchStatus("Enter at least 2 characters."); return; }
+  setSearchStatus("Searching local Nominatim…");
+  $("searchBtn").disabled = true;
   try {
-    const payload = await apiGet(`/api/trips/${tripId}/points`);
-    const points = payload.points || [];
-    tripCoordinates = points.filter((p) => p.lat_deg != null && p.lon_deg != null).map((p) => [p.lon_deg, p.lat_deg]);
-    if (tripCoordinates.length) currentPosition = tripCoordinates[tripCoordinates.length - 1];
-    syncOverlayData();
+    const payload = await apiGet(`/api/search?q=${encodeURIComponent(query)}&limit=8`);
+    renderSearchResults(payload.results || []);
+    setSearchStatus(`${payload.count || 0} result(s).`);
   } catch (error) {
-    console.error("Failed to load trip points", error);
+    console.error(error);
+    setSearchStatus(`Search failed: ${error.message || error}`);
+  } finally {
+    $("searchBtn").disabled = false;
   }
 }
 
-async function refreshTrips() {
-  const tripPayload = await apiGet("/api/trips");
-  const previousTripId = activeTripId;
-  activeTripId = tripPayload.active_trip_id;
-  lastTripForExport = activeTripId || (tripPayload.trips && tripPayload.trips.length ? tripPayload.trips[0].id : null);
-  setText("tripv", activeTripId ? `#${activeTripId}` : "no");
-
-  if (activeTripId !== previousTripId) {
-    lastLoggedFixKey = null;
-    await loadTripPoints(activeTripId);
-  }
-}
-
-function pushFixToTrip(lon, lat) {
-  const key = `${lon.toFixed(6)},${lat.toFixed(6)}`;
-  if (key === lastLoggedFixKey) return;
-  lastLoggedFixKey = key;
-  tripCoordinates.push([lon, lat]);
-  syncOverlayData();
-}
-
-async function tick() {
-  const snapshot = await apiGet("/api/state");
-  const state = snapshot.state;
-
-  setText("fixv", state.fix_valid ? `OK (mode ${state.fix_type})` : `NO (mode ${state.fix_type})`);
-  setText("speedv", fmtSpeed(state.speed_mps));
-  setText("satsv", state.sats_used == null ? "—" : String(state.sats_used));
-  setText("hdopv", state.hdop == null ? "—" : state.hdop.toFixed(1));
-  setText("agev", `${snapshot.age_s.toFixed(1)}s`);
-  setText("posv", (state.lat_deg != null && state.lon_deg != null) ? `${state.lat_deg.toFixed(6)}, ${state.lon_deg.toFixed(6)}` : "—");
-  setText("reasonv", snapshot.update_reason || "—");
-
-  if (map && state.lat_deg != null && state.lon_deg != null) {
-    currentPosition = [state.lon_deg, state.lat_deg];
-    syncOverlayData();
-    if (!hasCenteredOnFix) {
-      map.jumpTo({ center: currentPosition, zoom: 15 });
-      hasCenteredOnFix = true;
-    }
-    if (activeTripId && state.fix_valid) pushFixToTrip(state.lon_deg, state.lat_deg);
-  }
+async function setMapStyle() {
+  mapReady = false;
+  setMapStatus("Applying map style…");
+  map.setStyle(buildStyle(getTheme()));
 }
 
 async function initMap() {
-  if (typeof window.maplibregl === "undefined") {
-    setMapStatus("MapLibre failed to load.");
-    return;
-  }
-
-  setMapStatus("Loading UI config…");
-  mapConfig = await apiGet("/api/ui-config");
-  satelliteAvailable = Boolean(mapConfig.satellite_tiles_url);
+  config = await apiGet("/api/ui-config");
+  satelliteAvailable = Boolean(config.satellite_tiles_url);
   updateThemeButtons();
-
-  if (!mapConfig.vector_tilejson_url) {
-    setMapStatus("Vector tiles are not configured.");
-    return;
-  }
-
-  setMapStatus("Loading vector TileJSON…");
-  const tileResponse = await fetch(mapConfig.vector_tilejson_url);
-  if (!tileResponse.ok) throw new Error(`TileJSON ${tileResponse.status}`);
-  basemapTileJson = await tileResponse.json();
-
-  setMapStatus("Creating map…");
-  map = new maplibregl.Map({
-    container: "map",
-    style: buildStyle(getTheme(), basemapTileJson, mapConfig, satelliteVisible),
-    center: DEFAULT_VIEW.center,
-    zoom: DEFAULT_VIEW.zoom,
-  });
-
+  if (!config.vector_tilejson_url) throw new Error("vector_tilejson_url is not configured");
+  tilejson = await apiGet(config.vector_tilejson_url);
+  map = new maplibregl.Map({ container: "map", style: buildStyle(getTheme()), center: [-78.18618, 39.08809], zoom: 13 });
   map.addControl(new maplibregl.NavigationControl(), "top-right");
-
   map.on("load", () => {
-    afterStyleReady(satelliteAvailable ? "Vector map ready. Satellite toggle available." : "Vector map ready. Satellite tiles not configured.");
+    mapReady = true;
+    ensureOverlays();
+    if (destination) applyDestinationMarker();
+    setMapStatus(satelliteAvailable ? "Vector map ready. Satellite toggle available." : "Vector map ready. Satellite tiles not configured.");
   });
-
   map.on("styledata", () => {
-    if (!mapReady) {
-      afterStyleReady(satelliteAvailable ? "Theme applied. Satellite toggle available." : "Theme applied. Satellite tiles not configured.");
-    }
+    if (!map || !map.isStyleLoaded()) return;
+    mapReady = true;
+    ensureOverlays();
+    if (destination) applyDestinationMarker();
+    setMapStatus(satelliteAvailable ? "Theme applied. Satellite toggle available." : "Theme applied. Satellite tiles not configured.");
   });
-
   map.on("error", (event) => {
     const error = event && event.error ? event.error : event;
     console.error("Map error", error);
-    if (!mapReady) setMapStatus(`Map error: ${error?.message || error}`);
+    setMapStatus(`Map error: ${error?.message || error}`);
   });
 }
 
+async function refreshTrips() {
+  const data = await apiGet("/api/trips");
+  activeTripId = data.active_trip_id;
+  const trips = Array.isArray(data.trips) ? data.trips : [];
+  lastTripForExport = activeTripId ?? (trips.length ? trips[0].id : null);
+  setText("tripv", activeTripId ? `#${activeTripId}` : "—");
+  if (activeTripId) {
+    const ptsPayload = await apiGet(`/api/trips/${activeTripId}/points`);
+    const pts = Array.isArray(ptsPayload.points) ? ptsPayload.points : [];
+    currentActiveLine = pts.filter((p) => p.lon_deg != null && p.lat_deg != null).map((p) => [p.lon_deg, p.lat_deg]);
+  } else {
+    currentActiveLine = [];
+  }
+  if (map && mapReady) ensureOverlays();
+}
+
+async function tick() {
+  const snap = await apiGet("/api/state");
+  const st = snap.state || {};
+  setText("fixv", st.fix_valid ? `3D (${st.fix_type || 0})` : "No fix");
+  setText("speedv", st.speed_mps == null ? "—" : `${speedToMph(st.speed_mps).toFixed(1)} mph`);
+  setText("satsv", st.sats_used == null ? "—" : String(st.sats_used));
+  setText("hdopv", st.hdop == null ? "—" : Number(st.hdop).toFixed(2));
+  setText("agev", snap.age_s == null ? "—" : `${Number(snap.age_s).toFixed(1)} s`);
+  setText("reasonv", `Reason: ${snap.update_reason || "—"}`);
+  setText("posv", formatLatLon(st.lat_deg, st.lon_deg));
+  if (map && mapReady) {
+    ensureOverlays(snap);
+    if (!hasAutoCentered && st.fix_valid && st.lat_deg != null && st.lon_deg != null) {
+      map.jumpTo({ center: [st.lon_deg, st.lat_deg], zoom: Math.max(map.getZoom(), 14) });
+      hasAutoCentered = true;
+    }
+  }
+}
+
+function download(url) { window.location.href = url; }
+
 function bindUi() {
-  document.getElementById("startBtn").addEventListener("click", async () => {
-    await apiPost("/api/trips/start", { name: "Trip" });
-    await refreshTrips();
-  });
-
-  document.getElementById("stopBtn").addEventListener("click", async () => {
-    await apiPost("/api/trips/stop");
-    await refreshTrips();
-  });
-
-  document.getElementById("csvBtn").addEventListener("click", () => {
-    if (lastTripForExport) download(`/api/trips/${lastTripForExport}/export.csv`);
-  });
-  document.getElementById("gpxBtn").addEventListener("click", () => {
-    if (lastTripForExport) download(`/api/trips/${lastTripForExport}/export.gpx`);
-  });
-  document.getElementById("kmlBtn").addEventListener("click", () => {
-    if (lastTripForExport) download(`/api/trips/${lastTripForExport}/export.kml`);
-  });
-
+  $("searchForm").addEventListener("submit", async (event) => { event.preventDefault(); await performSearch(); });
+  $("startBtn").addEventListener("click", async () => { await apiPost("/api/trips/start", { name: "Trip" }); await refreshTrips(); });
+  $("stopBtn").addEventListener("click", async () => { await apiPost("/api/trips/stop"); await refreshTrips(); });
+  $("csvBtn").addEventListener("click", () => { if (lastTripForExport) download(`/api/trips/${lastTripForExport}/export.csv`); });
+  $("gpxBtn").addEventListener("click", () => { if (lastTripForExport) download(`/api/trips/${lastTripForExport}/export.gpx`); });
+  $("kmlBtn").addEventListener("click", () => { if (lastTripForExport) download(`/api/trips/${lastTripForExport}/export.kml`); });
   document.querySelectorAll("[data-theme]").forEach((button) => {
     button.addEventListener("click", () => {
       const nextTheme = button.dataset.theme;
@@ -495,10 +285,10 @@ function bindUi() {
       applyChromeTheme(getTheme());
       updateThemeButtons();
       if (map) setMapStyle();
+      if (destinationMarker) { destinationMarker.remove(); destinationMarker = null; }
     });
   });
-
-  document.getElementById("satelliteBtn").addEventListener("click", () => {
+  $("satelliteBtn").addEventListener("click", () => {
     if (!satelliteAvailable || !map) return;
     satelliteVisible = !satelliteVisible;
     updateThemeButtons();
@@ -510,22 +300,8 @@ function bindUi() {
   applyChromeTheme(getTheme());
   updateThemeButtons();
   bindUi();
-
-  try {
-    await initMap();
-  } catch (error) {
-    console.error(error);
-    setMapStatus(String(error));
-  }
-
-  await refreshTrips();
-  await tick();
-
-  setInterval(async () => {
-    try { await tick(); } catch (error) { console.error(error); }
-  }, 500);
-
-  setInterval(async () => {
-    try { await refreshTrips(); } catch (error) { console.error(error); }
-  }, 3000);
+  try { await initMap(); } catch (error) { console.error(error); setMapStatus(String(error)); }
+  try { await refreshTrips(); await tick(); } catch (error) { console.error(error); }
+  setInterval(async () => { try { await tick(); } catch (error) { console.error(error); } }, 750);
+  setInterval(async () => { try { await refreshTrips(); } catch (error) { console.error(error); } }, 3000);
 })();

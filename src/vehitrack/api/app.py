@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from dataclasses import dataclass
-from typing import Optional, Any, Dict
-from datetime import timezone
+from typing import Optional, Any, Dict, List
+from urllib.parse import urlencode
+from urllib.request import urlopen, Request
 
 import uvicorn
-from fastapi import FastAPI, Response, HTTPException
+from fastapi import FastAPI, Response, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -21,22 +23,15 @@ from vehitrack.store.tiles import Mbtiles
 
 @dataclass
 class Settings:
-    # server
     host: str = "0.0.0.0"
     port: int = 8080
-
-    # gpsd
     gpsd_host: str = "127.0.0.1"
     gpsd_port: int = 2947
-
-    # logging
     db_path: str = "/var/lib/vehitrack/vehitrack.sqlite"
     raw_fixes: bool = False
     min_time_s: float = 1.0
     min_distance_m: float = 7.0
     max_speed_mps: float = 90.0
-
-    # tiles
     mbtiles_path: Optional[str] = None
     vector_tilejson_url: Optional[str] = None
     satellite_tiles_url: Optional[str] = None
@@ -44,23 +39,21 @@ class Settings:
     satellite_minzoom: int = 0
     satellite_maxzoom: int = 19
     satellite_tile_size: int = 256
+    nominatim_url: str = "http://127.0.0.1:7070"
+    nominatim_timeout_s: float = 8.0
 
     @staticmethod
     def from_env() -> "Settings":
-        # Simple env override; forward-thinking without pulling in extra deps.
         s = Settings()
         s.host = os.getenv("VEHITRACK_HOST", s.host)
         s.port = int(os.getenv("VEHITRACK_PORT", str(s.port)))
-
         s.gpsd_host = os.getenv("VEHITRACK_GPSD_HOST", s.gpsd_host)
         s.gpsd_port = int(os.getenv("VEHITRACK_GPSD_PORT", str(s.gpsd_port)))
-
         s.db_path = os.getenv("VEHITRACK_DB_PATH", s.db_path)
         s.raw_fixes = os.getenv("VEHITRACK_RAW_FIXES", str(s.raw_fixes)).lower() in ("1", "true", "yes")
         s.min_time_s = float(os.getenv("VEHITRACK_MIN_TIME_S", str(s.min_time_s)))
         s.min_distance_m = float(os.getenv("VEHITRACK_MIN_DISTANCE_M", str(s.min_distance_m)))
         s.max_speed_mps = float(os.getenv("VEHITRACK_MAX_SPEED_MPS", str(s.max_speed_mps)))
-
         s.mbtiles_path = os.getenv("VEHITRACK_MBTILES", s.mbtiles_path)
         s.vector_tilejson_url = os.getenv("VEHITRACK_VECTOR_TILEJSON_URL", s.vector_tilejson_url)
         s.satellite_tiles_url = os.getenv("VEHITRACK_SATELLITE_TILES_URL", s.satellite_tiles_url)
@@ -68,6 +61,8 @@ class Settings:
         s.satellite_minzoom = int(os.getenv("VEHITRACK_SATELLITE_MINZOOM", str(s.satellite_minzoom)))
         s.satellite_maxzoom = int(os.getenv("VEHITRACK_SATELLITE_MAXZOOM", str(s.satellite_maxzoom)))
         s.satellite_tile_size = int(os.getenv("VEHITRACK_SATELLITE_TILE_SIZE", str(s.satellite_tile_size)))
+        s.nominatim_url = os.getenv("VEHITRACK_NOMINATIM_URL", s.nominatim_url).rstrip("/")
+        s.nominatim_timeout_s = float(os.getenv("VEHITRACK_NOMINATIM_TIMEOUT_S", str(s.nominatim_timeout_s)))
         return s
 
 
@@ -103,18 +98,39 @@ class StateHub:
 
 settings = Settings.from_env()
 app = FastAPI(title="vehitrack", version="0.1.0")
-
 hub = StateHub()
 rejector = JumpRejector(FilterConfig(max_speed_mps=settings.max_speed_mps))
-
-store = SqliteStore(LoggingConfig(
-    db_path=settings.db_path,
-    raw_fixes=settings.raw_fixes,
-    min_time_s=settings.min_time_s,
-    min_distance_m=settings.min_distance_m,
-))
-
+store = SqliteStore(LoggingConfig(db_path=settings.db_path, raw_fixes=settings.raw_fixes, min_time_s=settings.min_time_s, min_distance_m=settings.min_distance_m))
 mb: Optional[Mbtiles] = Mbtiles(settings.mbtiles_path) if settings.mbtiles_path else None
+
+
+def _nominatim_search(q: str, limit: int) -> List[Dict[str, Any]]:
+    params = urlencode({"q": q, "format": "jsonv2", "addressdetails": 1, "limit": max(1, min(limit, 10))})
+    url = f"{settings.nominatim_url}/search?{params}"
+    req = Request(url, headers={"Accept": "application/json", "User-Agent": "vehitrack/0.1"})
+    with urlopen(req, timeout=settings.nominatim_timeout_s) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+
+    results: List[Dict[str, Any]] = []
+    for item in payload if isinstance(payload, list) else []:
+        try:
+            lat_f = float(item.get("lat"))
+            lon_f = float(item.get("lon"))
+        except (TypeError, ValueError):
+            continue
+        results.append({
+            "label": item.get("display_name") or item.get("name") or "Unnamed result",
+            "name": item.get("name") or item.get("display_name") or "Unnamed result",
+            "lat": lat_f,
+            "lon": lon_f,
+            "osm_type": item.get("osm_type"),
+            "osm_id": item.get("osm_id"),
+            "class": item.get("class") or item.get("category"),
+            "type": item.get("type"),
+            "address": item.get("address") or {},
+            "raw": item,
+        })
+    return results
 
 
 @app.on_event("startup")
@@ -122,11 +138,8 @@ async def _startup() -> None:
     async def on_fix(fix: FixState) -> None:
         ok, reason = rejector.consider(fix)
         if not ok:
-            # Keep publishing the last OK state, but update counters (and "age")
             snap = await hub.get_snapshot()
             last = snap["state"]
-            # Reconstruct minimal FixState from published JSON for continuity
-            # (We keep it simple: just update counters, do not mutate state.)
             await hub.set(
                 st=FixState(
                     ts_utc=now_utc(),
@@ -144,18 +157,18 @@ async def _startup() -> None:
                 reason=reason,
                 logged=False,
                 rejected_count=rejector.rejected_count,
-                accepted_count=rejector.rejected_count + 0,  # not perfect, but good enough for v1 display
+                accepted_count=snap.get("accepted", 0),
             )
             return
 
-        # Accept: publish + maybe log (off-thread to keep ingest responsive)
         logged = await asyncio.to_thread(store.maybe_log_fix, fix)
+        snap = await hub.get_snapshot()
         await hub.set(
             st=fix,
             reason=reason,
             logged=logged,
             rejected_count=rejector.rejected_count,
-            accepted_count=rejector.rejected_count + 1,  # display-only counter
+            accepted_count=snap.get("accepted", 0) + 1,
         )
 
     cfg = GpsdConfig(host=settings.gpsd_host, port=settings.gpsd_port)
@@ -179,7 +192,6 @@ async def _shutdown() -> None:
         pass
 
 
-# ---- Static UI ----
 ui_dir = os.path.join(os.path.dirname(__file__), "..", "ui")
 ui_dir = os.path.abspath(ui_dir)
 app.mount("/static", StaticFiles(directory=ui_dir), name="static")
@@ -191,7 +203,6 @@ async def index() -> str:
         return f.read()
 
 
-# ---- API: State ----
 @app.get("/api/state")
 async def api_state() -> Dict[str, Any]:
     return await hub.get_snapshot()
@@ -206,10 +217,22 @@ async def api_ui_config() -> Dict[str, Any]:
         "satellite_minzoom": settings.satellite_minzoom,
         "satellite_maxzoom": settings.satellite_maxzoom,
         "satellite_tile_size": settings.satellite_tile_size,
+        "nominatim_url": settings.nominatim_url,
     }
 
 
-# ---- API: Trips ----
+@app.get("/api/search")
+async def api_search(q: str = Query(..., min_length=2), limit: int = Query(8, ge=1, le=10)) -> Dict[str, Any]:
+    q = q.strip()
+    if len(q) < 2:
+        raise HTTPException(status_code=400, detail="Query too short")
+    try:
+        results = await asyncio.to_thread(_nominatim_search, q, limit)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Nominatim search failed: {exc}")
+    return {"query": q, "count": len(results), "results": results}
+
+
 @app.get("/api/trips")
 async def trips_list() -> Dict[str, Any]:
     return {"active_trip_id": store.active_trip_id(), "trips": store.list_trips()}
@@ -240,8 +263,7 @@ async def trips_export_csv(trip_id: int) -> Response:
     if not pts:
         raise HTTPException(status_code=404, detail="No points")
     data = export_csv(pts)
-    return Response(content=data, media_type="text/csv",
-                    headers={"Content-Disposition": f'attachment; filename="trip_{trip_id}.csv"'})
+    return Response(content=data, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="trip_{trip_id}.csv"'})
 
 
 @app.get("/api/trips/{trip_id}/export.gpx")
@@ -250,8 +272,7 @@ async def trips_export_gpx(trip_id: int) -> Response:
     if not pts:
         raise HTTPException(status_code=404, detail="No points")
     data = export_gpx(pts, name=f"Trip {trip_id}")
-    return Response(content=data, media_type="application/gpx+xml",
-                    headers={"Content-Disposition": f'attachment; filename="trip_{trip_id}.gpx"'})
+    return Response(content=data, media_type="application/gpx+xml", headers={"Content-Disposition": f'attachment; filename="trip_{trip_id}.gpx"'})
 
 
 @app.get("/api/trips/{trip_id}/export.kml")
@@ -260,11 +281,9 @@ async def trips_export_kml(trip_id: int) -> Response:
     if not pts:
         raise HTTPException(status_code=404, detail="No points")
     data = export_kml(pts, name=f"Trip {trip_id}")
-    return Response(content=data, media_type="application/vnd.google-earth.kml+xml",
-                    headers={"Content-Disposition": f'attachment; filename="trip_{trip_id}.kml"'})
+    return Response(content=data, media_type="application/vnd.google-earth.kml+xml", headers={"Content-Disposition": f'attachment; filename="trip_{trip_id}.kml"'})
 
 
-# ---- Tiles (optional MBTiles) ----
 @app.get("/tiles/{z}/{x}/{y}.png")
 async def tiles_png(z: int, x: int, y: int) -> Response:
     if not mb:
@@ -272,11 +291,9 @@ async def tiles_png(z: int, x: int, y: int) -> Response:
     blob = await asyncio.to_thread(mb.tile, z, x, y)
     if blob is None:
         raise HTTPException(status_code=404, detail="Tile not found")
-    # format may be png/jpg; but route is .png for simplicity in v1
     return Response(content=blob, media_type="image/png")
 
 
-# ---- Simple health page (human readable) ----
 @app.get("/health", response_class=HTMLResponse)
 async def health() -> str:
     snap = await hub.get_snapshot()
@@ -285,40 +302,32 @@ async def health() -> str:
     mph = None
     if st.get("speed_mps") is not None:
         mph = float(st["speed_mps"]) * 2.2369362920544
-
     active = store.active_trip_id()
-
     return f"""
-        <!doctype html>
-        <html>
-        <head>
-        <meta name="viewport" content="width=device-width,initial-scale=1" />
-        <title>vehitrack health</title>
-        <style>
-        body {{ font-family: system-ui, sans-serif; padding: 16px; }}
-        .kv {{ display:flex; gap:12px; margin:6px 0; }}
-        .k {{ width:160px; color:#444; }}
-        .v {{ font-weight:600; }}
-        </style>
-        </head>
-        <body>
-        <h2>vehitrack</h2>
-        <div class="kv"><div class="k">fix_valid</div><div class="v">{st.get("fix_valid")}</div></div>
-        <div class="kv"><div class="k">fix_type</div><div class="v">{st.get("fix_type")}</div></div>
-        <div class="kv"><div class="k">lat, lon</div><div class="v">{st.get("lat_deg")}, {st.get("lon_deg")}</div></div>
-        <div class="kv"><div class="k">speed</div><div class="v">{st.get("speed_mps")} m/s {f"({mph:.1f} mph)" if mph is not None else ""}</div></div>
-        <div class="kv"><div class="k">course</div><div class="v">{st.get("course_deg")}°</div></div>
-        <div class="kv"><div class="k">sats_used</div><div class="v">{st.get("sats_used")}</div></div>
-        <div class="kv"><div class="k">hdop</div><div class="v">{st.get("hdop")}</div></div>
-        <div class="kv"><div class="k">age</div><div class="v">{age:.2f}s</div></div>
-        <div class="kv"><div class="k">update_reason</div><div class="v">{snap.get("update_reason")}</div></div>
-        <div class="kv"><div class="k">trip_active</div><div class="v">{active if active else "no"}</div></div>
-        <div class="kv"><div class="k">logged_last</div><div class="v">{snap.get("logged_last")}</div></div>
-        <p><a href="/">Open UI</a></p>
-        </body>
-        </html>
-        """
+<!doctype html>
+<html>
+  <body>
+    <h2>vehitrack</h2>
+    <p><b>fix_valid</b> {st.get('fix_valid')}</p>
+    <p><b>fix_type</b> {st.get('fix_type')}</p>
+    <p><b>lat, lon</b> {st.get('lat_deg')}, {st.get('lon_deg')}</p>
+    <p><b>speed</b> {st.get('speed_mps')} m/s {f'({mph:.1f} mph)' if mph is not None else ''}</p>
+    <p><b>course</b> {st.get('course_deg')}°</p>
+    <p><b>sats_used</b> {st.get('sats_used')}</p>
+    <p><b>hdop</b> {st.get('hdop')}</p>
+    <p><b>age</b> {age:.2f}s</p>
+    <p><b>update_reason</b> {snap.get('update_reason')}</p>
+    <p><b>trip_active</b> {active if active else 'no'}</p>
+    <p><b>logged_last</b> {snap.get('logged_last')}</p>
+    <p><a href='/'>Open UI</a></p>
+  </body>
+</html>
+"""
 
 
 def main() -> None:
     uvicorn.run("vehitrack.api.app:app", host=settings.host, port=settings.port, reload=False)
+
+
+if __name__ == "__main__":
+    main()
