@@ -49,6 +49,13 @@ input {
 }
 input:focus { border-color: color-mix(in srgb, var(--accent) 70%, white 30%); }
 
+body.theme-light input {
+  background: #ffffff;
+  border-color: #cfd8e4;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+}
+body.theme-light .ghost-btn { background: rgba(18, 32, 51, 0.035); }
+
 .map-frame { position: relative; width: 100%; height: 100%; overflow: hidden; }
 #map { width: 100%; height: 100%; }
 .glass, .glass-stack > * {
@@ -177,11 +184,28 @@ input:focus { border-color: color-mix(in srgb, var(--accent) 70%, white 30%); }
   transform: translateX(-50%) translateY(0);
   pointer-events: auto;
 }
+.nav-primary-wrap { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: center; min-width: 0; }
 .nav-primary { min-width: 0; }
+.speed-limit-sign {
+  width: 84px; min-width: 84px; height: 104px;
+  border-radius: 16px;
+  background: #ffffff;
+  border: 4px solid #111111;
+  color: #111111;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  place-items: center;
+  padding: 8px 6px 10px;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.18);
+  opacity: 0.72;
+}
+.speed-limit-sign.available { opacity: 1; }
+.sign-top { font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; line-height: 1; }
+.sign-value { font-size: 2rem; font-weight: 900; line-height: 1; align-self: center; }
 .nav-instruction { font-size: 1.22rem; font-weight: 800; line-height: 1.2; margin-top: 4px; }
 .nav-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(92px, 1fr));
+  grid-template-columns: repeat(3, minmax(92px, 1fr)) minmax(128px, 1fr);
   gap: 10px;
 }
 .metric-pill {
@@ -202,6 +226,23 @@ input:focus { border-color: color-mix(in srgb, var(--accent) 70%, white 30%); }
 }
 .metric-pill strong { font-size: 1.02rem; }
 .metric-pill.big strong { font-size: 1.16rem; }
+.end-route-btn {
+  min-height: 100%;
+  align-self: stretch;
+  border-radius: 18px;
+  font-weight: 700;
+  background: linear-gradient(180deg, color-mix(in srgb, #d14646 78%, white 22%), #b83030);
+  border-color: color-mix(in srgb, #b83030 78%, white 22%);
+  color: #111111 !important;
+  text-shadow: none;
+}
+.end-route-btn:hover { border-color: #7a1d1d; }
+body .end-route-btn,
+body .end-route-btn:hover,
+body .end-route-btn:active,
+body .end-route-btn:focus {
+  color: #111111 !important;
+}
 .metric-pill.compact {
   min-width: 92px;
   padding: 9px 11px;
@@ -270,7 +311,7 @@ input:focus { border-color: color-mix(in srgb, var(--accent) 70%, white 30%); }
 .status-strip {
   position: absolute;
   right: 16px;
-  top: 132px;
+  top: 78px;
   z-index: 17;
   border-radius: 20px;
   padding: 10px;
@@ -278,7 +319,7 @@ input:focus { border-color: color-mix(in srgb, var(--accent) 70%, white 30%); }
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
-  max-width: min(560px, calc(100vw - 32px));
+  max-width: min(420px, calc(100vw - 32px));
 }
 
 .steps-drawer {
@@ -398,13 +439,12 @@ body[data-mode="navigating"] .search-panel:not(.open) { opacity: 0; pointer-even
   }
   .brand-lockup, .topbar-actions { justify-content: space-between; }
   .nav-banner {
-    top: 164px;
+    top: 192px;
     width: calc(100vw - 24px);
     grid-template-columns: 1fr;
   }
   .status-strip {
-    top: auto;
-    bottom: 170px;
+    top: 136px;
     left: 12px;
     right: 12px;
     justify-content: flex-start;
@@ -443,4 +483,36 @@ body[data-mode="navigating"] .search-panel:not(.open) { opacity: 0; pointer-even
     grid-template-columns: repeat(3, 1fr);
     display: grid;
   }
+}
+
+
+.maplibregl-ctrl-top-right {
+  top: 216px !important;
+  right: 16px !important;
+  z-index: 16 !important;
+}
+.maplibregl-ctrl-group {
+  border-radius: 16px !important;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+body[data-mode="navigating"] .route-card {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(18px);
+}
+
+body[data-mode="navigating"] .status-strip {
+  top: 78px;
+}
+
+@media (max-width: 1100px) {
+  .maplibregl-ctrl-top-right { top: 270px !important; right: 12px !important; }
+  .nav-primary-wrap { grid-template-columns: 1fr; }
+  .speed-limit-sign { width: 74px; min-width: 74px; height: 92px; }
+}
+
+@media (max-width: 720px) {
+  .maplibregl-ctrl-top-right { top: 320px !important; right: 12px !important; }
 }

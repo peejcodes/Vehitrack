@@ -6,9 +6,9 @@
   <title>vehitrack</title>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
-  <link href="/static/styles.css?v=ui4" rel="stylesheet" />
+  <link href="/static/styles.css?v=ui8" rel="stylesheet" />
 </head>
-<body class="theme-dark" data-mode="search">
+<body class="theme-light" data-mode="search">
   <div id="mapFrame" class="map-frame">
     <div id="map"></div>
 
@@ -46,10 +46,17 @@
     </section>
 
     <section id="navBanner" class="nav-banner glass">
-      <div class="nav-primary">
-        <div class="micro muted">Next maneuver</div>
-        <div id="nextInstruction" class="nav-instruction">—</div>
-        <div id="navStatus" class="micro muted">Route guidance idle.</div>
+      <div class="nav-primary-wrap">
+        <div id="speedLimitSign" class="speed-limit-sign" aria-label="Current speed limit">
+          <div class="sign-top">SPEED</div>
+          <div class="sign-top">LIMIT</div>
+          <div id="speedLimitValue" class="sign-value">—</div>
+        </div>
+        <div class="nav-primary">
+          <div class="micro muted">Next maneuver</div>
+          <div id="nextInstruction" class="nav-instruction">—</div>
+          <div id="navStatus" class="micro muted">Route guidance idle.</div>
+        </div>
       </div>
       <div class="nav-metrics">
         <div class="metric-pill big">
@@ -64,6 +71,7 @@
           <span>ETA</span>
           <strong id="remainingEta">—</strong>
         </div>
+        <button id="endRouteBtn" type="button" class="ghost-btn end-route-btn">End Route</button>
       </div>
     </section>
 
@@ -172,6 +180,6 @@
     </aside>
   </div>
 
-  <script src="/static/app.js?v=ui4"></script>
+  <script src="/static/app.js?v=ui8"></script>
 </body>
 </html>

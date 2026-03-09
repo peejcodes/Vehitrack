@@ -1,15 +1,15 @@
 const THEMES = {
   light: {
     chrome: { bg: "#edf1f5", panel: "#ffffff", panel2: "#eef2f7", border: "#d7dee8", text: "#122033", muted: "#5f6d7d", accent: "#356fe6", accent2: "#4f86f7" },
-    map: { background: "#f6f3ed", earth: "#ebe5d8", landuse: "#d7e8cb", water: "#9fcbff", boundaries: "#8d99a8", roads: "#ffffff", roadCasing: "#c6ccd4", placeText: "#1a2230", roadText: "#273142", halo: "#ffffff", trip: "#356fe6", route: "#356fe6", routeCasing: "#ffffff", position: "#ff6a3d" }
+    map: { background: "#f6f3ed", earth: "#ebe5d8", landuse: "#d7e8cb", water: "#9fcbff", boundaries: "#8d99a8", roads: "#ffffff", roadCasing: "#c6ccd4", majorRoads: "#ffd35f", majorRoadCasing: "#8c6a18", shieldBg: "#2f5fbf", shieldText: "#ffffff", placeText: "#1a2230", roadText: "#273142", halo: "#ffffff", trip: "#356fe6", route: "#356fe6", routeCasing: "#ffffff", position: "#ff6a3d" }
   },
   dark: {
     chrome: { bg: "#111418", panel: "#1a1f25", panel2: "#232a33", border: "#2f3742", text: "#eceff4", muted: "#a5afba", accent: "#6b7280", accent2: "#8b94a3" },
-    map: { background: "#0f1419", earth: "#182129", landuse: "#1c2d22", water: "#173245", boundaries: "#6a7380", roads: "#7d8591", roadCasing: "#404954", placeText: "#f1f3f7", roadText: "#d9dee6", halo: "#0f1419", trip: "#56a5ff", route: "#56a5ff", routeCasing: "#cfe8ff", position: "#ff7e47" }
+    map: { background: "#0f1419", earth: "#182129", landuse: "#1c2d22", water: "#173245", boundaries: "#6a7380", roads: "#7d8591", roadCasing: "#404954", majorRoads: "#f0c44c", majorRoadCasing: "#7e6323", shieldBg: "#325fc1", shieldText: "#ffffff", placeText: "#f1f3f7", roadText: "#d9dee6", halo: "#0f1419", trip: "#56a5ff", route: "#56a5ff", routeCasing: "#cfe8ff", position: "#ff7e47" }
   },
   amethyst: {
     chrome: { bg: "#120f1d", panel: "#1b1528", panel2: "#251d37", border: "#3c2c62", text: "#eee9fb", muted: "#b3a7d0", accent: "#7734eb", accent2: "#9a6cff" },
-    map: { background: "#120f1d", earth: "#1c1629", landuse: "#1f2134", water: "#271e4f", boundaries: "#7f76a2", roads: "#d7d1ea", roadCasing: "#5d4f82", placeText: "#f2eefe", roadText: "#e7ddff", halo: "#120f1d", trip: "#a883ff", route: "#7734eb", routeCasing: "#e9deff", position: "#c38cff" }
+    map: { background: "#120f1d", earth: "#1c1629", landuse: "#1f2134", water: "#271e4f", boundaries: "#7f76a2", roads: "#d7d1ea", roadCasing: "#5d4f82", majorRoads: "#c9a2ff", majorRoadCasing: "#6d45b1", shieldBg: "#7734eb", shieldText: "#ffffff", placeText: "#f2eefe", roadText: "#e7ddff", halo: "#120f1d", trip: "#a883ff", route: "#7734eb", routeCasing: "#e9deff", position: "#c38cff" }
   }
 };
 
@@ -17,7 +17,7 @@ let config = null;
 let map = null;
 let mapReady = false;
 let tilejson = null;
-let currentThemeName = "dark";
+let currentThemeName = "light";
 let satelliteVisible = false;
 let satelliteAvailable = false;
 let destinationMarker = null;
@@ -32,9 +32,13 @@ let currentRouteMetrics = null;
 let currentRouteSteps = [];
 let currentNavStepIndex = -1;
 let followMode = false;
+let navigationActive = false;
 let toolsOpen = false;
 let stepsOpen = false;
 let latestSnapshot = { state: null };
+let currentSpeedLimitMph = null;
+let lastSpeedProbeAt = 0;
+let lastSpeedProbeCoord = null;
 const GEO_SOURCE_ID = "vehitrack-overlays";
 
 function $(id) { return document.getElementById(id); }
@@ -65,13 +69,18 @@ function formatDuration(seconds) {
   return `${secs}s`;
 }
 
+function formatSpeedLimitMph(mph) {
+  if (mph == null || Number.isNaN(Number(mph))) return "—";
+  return String(Math.max(5, Math.round(Number(mph))));
+}
+
 function hasSearchResults() {
   const wrap = $("searchResults");
   return Boolean(wrap && wrap.children.length);
 }
 
 function getUiMode() {
-  if (followMode && currentRouteFeature) return "navigating";
+  if (navigationActive && currentRouteFeature) return "navigating";
   if (currentRouteFeature) return "route-preview";
   if (destination) return "destination";
   return "search";
@@ -89,10 +98,13 @@ function updateUiLayout() {
   }
 
   const routeCard = $("routeCard");
-  if (routeCard) routeCard.classList.toggle("visible", Boolean(destination || currentRouteFeature));
+  if (routeCard) routeCard.classList.toggle("visible", !navigationActive && Boolean(destination || currentRouteFeature));
 
   const navBanner = $("navBanner");
-  if (navBanner) navBanner.classList.toggle("visible", Boolean(currentRouteFeature));
+  if (navBanner) navBanner.classList.toggle("visible", Boolean(navigationActive && currentRouteFeature));
+
+  const speedLimitSign = $("speedLimitSign");
+  if (speedLimitSign) speedLimitSign.classList.toggle("available", currentSpeedLimitMph != null);
 
   const destinationChip = $("destinationChip");
   if (destinationChip) {
@@ -118,6 +130,9 @@ function updateUiLayout() {
 
   const clearSearchBtn = $("clearSearchBtn");
   if (clearSearchBtn) clearSearchBtn.disabled = !destination && !$("searchInput")?.value;
+
+  const endRouteBtn = $("endRouteBtn");
+  if (endRouteBtn) endRouteBtn.disabled = !currentRouteFeature;
 
   const mapFrame = $("mapFrame");
   if (mapFrame) {
@@ -161,6 +176,7 @@ function updateRouteButtons() {
   const clearBtn = $("clearRouteBtn");
   const followBtn = $("followBtn");
   const overviewBtn = $("overviewBtn");
+  const endRouteBtn = $("endRouteBtn");
   if (routeBtn) routeBtn.disabled = !destination;
   if (clearBtn) clearBtn.disabled = !currentRouteFeature;
   if (followBtn) {
@@ -169,6 +185,7 @@ function updateRouteButtons() {
     followBtn.classList.toggle("active", followMode);
   }
   if (overviewBtn) overviewBtn.disabled = !map || (!currentRouteFeature && !(latestSnapshot?.state?.fix_valid));
+  if (endRouteBtn) endRouteBtn.disabled = !currentRouteFeature;
   updateUiLayout();
 }
 
@@ -202,6 +219,55 @@ async function apiPost(url, payload = {}) {
   return response.json();
 }
 
+function setSpeedLimitValue(kmh) {
+  const value = Number.isFinite(Number(kmh)) && Number(kmh) > 0 ? Math.round(Number(kmh) * 0.621371) : null;
+  currentSpeedLimitMph = value;
+  const badge = $("speedLimitSign");
+  const valueEl = $("speedLimitValue");
+  if (valueEl) valueEl.textContent = formatSpeedLimitMph(value);
+  if (badge) badge.classList.toggle("available", value != null);
+}
+
+function featureLineCoordinates(feature) {
+  const geom = feature?.geometry;
+  if (!geom) return [];
+  if (geom.type === "LineString") return Array.isArray(geom.coordinates) ? geom.coordinates : [];
+  if (geom.type === "MultiLineString") return Array.isArray(geom.coordinates) ? geom.coordinates.flat() : [];
+  return [];
+}
+
+function updateSpeedLimitFromSnapshot(snapshot) {
+  const st = snapshot?.state || {};
+  if (!map || !mapReady || !config?.osrm_url || !map.getLayer("osrm-speed-probe") || !st.fix_valid || st.lat_deg == null || st.lon_deg == null) {
+    setSpeedLimitValue(null);
+    return;
+  }
+  if (map.getZoom() < 12) {
+    setSpeedLimitValue(null);
+    return;
+  }
+  const coord = [Number(st.lon_deg), Number(st.lat_deg)];
+  const now = Date.now();
+  if (lastSpeedProbeAt && now - lastSpeedProbeAt < 1200 && lastSpeedProbeCoord && haversineMeters(coord, lastSpeedProbeCoord) < 8) {
+    return;
+  }
+  lastSpeedProbeAt = now;
+  lastSpeedProbeCoord = coord;
+  const point = map.project(coord);
+  const features = map.queryRenderedFeatures([[point.x - 24, point.y - 24], [point.x + 24, point.y + 24]], { layers: ["osrm-speed-probe"] }) || [];
+  let best = null;
+  for (const feature of features) {
+    const speedKmh = Number(feature?.properties?.speed);
+    if (!Number.isFinite(speedKmh) || speedKmh <= 0) continue;
+    const coords = featureLineCoordinates(feature);
+    if (coords.length < 2) continue;
+    const metrics = buildRouteMetrics(coords);
+    const snapped = snapPointToLineProgress(coord, metrics);
+    if (!best || snapped.distanceM < best.distanceM) best = { distanceM: snapped.distanceM, speedKmh };
+  }
+  setSpeedLimitValue(best && best.distanceM <= 60 ? best.speedKmh : null);
+}
+
 function buildOverlayData(snapshot) {
   const features = [];
   if (currentRouteFeature) features.push(currentRouteFeature);
@@ -231,6 +297,7 @@ function createBaseLayers(theme) {
     { id: "boundaries", type: "line", source: "protomaps", "source-layer": "boundaries", paint: { "line-color": theme.map.boundaries, "line-width": 0.8 } },
     { id: "roads-casing", type: "line", source: "protomaps", "source-layer": "roads", paint: { "line-color": theme.map.roadCasing, "line-width": ["interpolate", ["linear"], ["zoom"], 5, 1, 10, 2, 14, 4, 15, 6] } },
     { id: "roads", type: "line", source: "protomaps", "source-layer": "roads", paint: { "line-color": theme.map.roads, "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.5, 10, 1, 14, 2, 15, 3] } },
+    ...(config?.osrm_url ? [{ id: "osrm-speed-probe", type: "line", source: "osrmProbe", "source-layer": "speeds", minzoom: 12, paint: { "line-color": "#000000", "line-width": 18, "line-opacity": 0.01 } }] : []),
     { id: "place-labels", type: "symbol", source: "protomaps", "source-layer": "places", minzoom: 3, layout: { "text-field": ["coalesce", ["get", "name:en"], ["get", "name"]], "text-font": ["Noto Sans Regular"], "text-size": ["interpolate", ["linear"], ["zoom"], 3, 10, 6, 12, 10, 14] }, paint: { "text-color": theme.map.placeText, "text-halo-color": theme.map.halo, "text-halo-width": 1.5 } },
     { id: "road-labels", type: "symbol", source: "protomaps", "source-layer": "roads", minzoom: 12, layout: { "symbol-placement": "line", "text-field": ["coalesce", ["get", "name:en"], ["get", "name"]], "text-font": ["Noto Sans Regular"], "text-size": 11 }, paint: { "text-color": theme.map.roadText, "text-halo-color": theme.map.halo, "text-halo-width": 1.5 } }
   );
@@ -254,6 +321,14 @@ function buildStyle(theme) {
       minzoom: Number(config.satellite_minzoom || 0),
       maxzoom: Number(config.satellite_maxzoom || 19),
       attribution: config.satellite_attribution || ""
+    };
+  }
+  if (config?.osrm_url) {
+    sources.osrmProbe = {
+      type: "vector",
+      tiles: [`${config.osrm_url}/tile/v1/driving/tile({x},{y},{z}).mvt`],
+      minzoom: 12,
+      maxzoom: 18
     };
   }
   return {
@@ -399,7 +474,8 @@ function resetRouteUi(message = "Select a destination to build a route.") {
   updateRouteButtons();
 }
 
-function clearRoute() {
+function clearRoute(options = {}) {
+  const { keepDestination = true, message = null } = options;
   currentRouteFeature = null;
   currentRoutePayload = null;
   currentRouteMetrics = null;
@@ -407,13 +483,15 @@ function clearRoute() {
   currentNavStepIndex = -1;
   followMode = false;
   stepsOpen = false;
+  setSpeedLimitValue(null);
+  if (!keepDestination) destination = null;
   if (map && mapReady) ensureOverlays();
-  resetRouteUi(destination ? "Route cleared. Destination still selected." : "Select a destination to build a route.");
+  resetRouteUi(message || (destination ? "Tap Route to Destination to build a fresh route." : "Select a destination to build a route."));
   updateUiLayout();
 }
 
 function clearDestination() {
-  clearRoute();
+  clearRoute({ keepDestination: false });
   destination = null;
   const searchInput = $("searchInput");
   if (searchInput) searchInput.value = "";
@@ -459,10 +537,12 @@ function renderSearchResults(results) {
     button.type = "button";
     button.className = "result-item";
     button.innerHTML = `<div class="result-name">${escapeHtml(result.name || result.label)}</div><div class="result-address">${escapeHtml(result.label)}</div>`;
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
       setSelectedDestination(result);
-      setSearchStatus("Destination selected. Tap Route to Destination to begin.");
-      clearRoute(false);
+      setSearchStatus("Destination selected. Calculating preview…");
+      clearRoute({ message: "Calculating route preview…" });
+      await requestRoute({ activate: false, fit: true });
+      setSearchStatus("Destination selected. Review the route, then tap Route to Destination to begin.");
       updateUiLayout();
     });
     wrap.appendChild(button);
@@ -613,6 +693,11 @@ function updateNavigationFromSnapshot(snapshot) {
     updateRouteButtons();
     return;
   }
+  if (!navigationActive) {
+    updateRouteButtons();
+    return;
+  }
+
   const st = snapshot?.state || {};
   if (!st.fix_valid || st.lat_deg == null || st.lon_deg == null) {
     setText("navStatus", "Waiting for a valid GPS fix to drive the route.");
@@ -656,7 +741,8 @@ function updateNavigationFromSnapshot(snapshot) {
   updateRouteButtons();
 }
 
-async function requestRoute() {
+async function requestRoute(options = {}) {
+  const { activate = true, fit = true } = options;
   if (!destination) {
     setRouteStatus("Select a destination first.");
     updateRouteButtons();
@@ -664,39 +750,57 @@ async function requestRoute() {
   }
   const routeBtn = $("routeBtn");
   if (routeBtn) routeBtn.disabled = true;
-  setRouteStatus("Requesting local OSRM route…");
+  setRouteStatus(activate ? "Requesting local OSRM route…" : "Calculating route preview…");
   try {
-    const payload = await apiPost("/api/route", {
-      destination: {
-        lat: Number(destination.lat),
-        lon: Number(destination.lon),
-        label: destination.label
-      }
-    });
-    currentRoutePayload = payload;
-    currentRouteFeature = {
-      type: "Feature",
-      geometry: payload.geometry,
-      properties: { kind: "route" }
-    };
-    currentRouteMetrics = buildRouteMetrics(payload.geometry.coordinates || []);
-    currentRouteSteps = normaliseRouteSteps(payload.steps || [], currentRouteMetrics);
-    currentNavStepIndex = currentRouteSteps.length ? 0 : -1;
+    const destinationKey = `${Number(destination.lat).toFixed(6)},${Number(destination.lon).toFixed(6)}`;
+    const alreadyForDestination = currentRoutePayload && currentRoutePayload.destination_key === destinationKey;
+
+    let payload = currentRoutePayload;
+    if (!alreadyForDestination) {
+      payload = await apiPost("/api/route", {
+        destination: {
+          lat: Number(destination.lat),
+          lon: Number(destination.lon),
+          label: destination.label
+        }
+      });
+      payload.destination_key = destinationKey;
+      currentRoutePayload = payload;
+      currentRouteFeature = {
+        type: "Feature",
+        geometry: payload.geometry,
+        properties: { kind: "route" }
+      };
+      currentRouteMetrics = buildRouteMetrics(payload.geometry.coordinates || []);
+      currentRouteSteps = normaliseRouteSteps(payload.steps || [], currentRouteMetrics);
+      currentNavStepIndex = currentRouteSteps.length ? 0 : -1;
+    }
 
     setText("routeDistance", formatDistance(payload.distance_m));
     setText("routeDuration", formatDuration(payload.duration_s));
     const originName = payload.origin?.name || "road";
     const destName = payload.destination?.name || "destination road";
     setText("routeMeta", `Snapped from ${originName} to ${destName}.`);
-    setRouteStatus(`Route ready${payload.steps?.length ? ` • ${payload.steps.length} step(s)` : ""}.`);
 
-    stepsOpen = false;
-    followMode = true;
+    if (activate) {
+      setRouteStatus(`Route ready${payload.steps?.length ? ` • ${payload.steps.length} step(s)` : ""}.`);
+      stepsOpen = false;
+      navigationActive = true;
+      followMode = true;
+    } else {
+      setRouteStatus("Preview ready. Tap Route to Destination to begin navigation.");
+      navigationActive = false;
+      followMode = false;
+      resetGuidanceUi("Preview ready. Turn-by-turn will start after you confirm the route.");
+    }
+
     if (map && mapReady) {
       ensureOverlays();
-      fitGeometry(payload.geometry);
+      if (fit) fitGeometry(payload.geometry);
     }
-    updateNavigationFromSnapshot(latestSnapshot);
+    if (activate) {
+      updateNavigationFromSnapshot(latestSnapshot);
+    }
     updateUiLayout();
   } catch (error) {
     console.error(error);
@@ -705,6 +809,7 @@ async function requestRoute() {
     currentRouteMetrics = null;
     currentRouteSteps = [];
     currentNavStepIndex = -1;
+    navigationActive = false;
     if (map && mapReady) ensureOverlays();
     resetRouteUi(`Routing failed: ${error.message || error}`);
     updateUiLayout();
@@ -738,6 +843,7 @@ async function initMap() {
     ensureOverlays();
     if (destination) applyDestinationMarker();
     setMapStatus(satelliteAvailable ? "Vector map ready. Satellite toggle available." : "Vector map ready. Satellite tiles not configured.");
+    updateSpeedLimitFromSnapshot(latestSnapshot);
     updateUiLayout();
   });
   map.on("styledata", () => {
@@ -746,6 +852,7 @@ async function initMap() {
     ensureOverlays();
     if (destination) applyDestinationMarker();
     setMapStatus(satelliteAvailable ? "Theme applied. Satellite toggle available." : "Theme applied. Satellite tiles not configured.");
+    updateSpeedLimitFromSnapshot(latestSnapshot);
     updateUiLayout();
   });
   map.on("error", (event) => {
@@ -803,6 +910,7 @@ async function tick() {
     }
   }
   updateNavigationFromSnapshot(snap);
+  updateSpeedLimitFromSnapshot(snap);
   updateUiLayout();
 }
 
@@ -813,13 +921,19 @@ function bindUi() {
   $("searchInput").addEventListener("focus", () => { updateUiLayout(); });
   $("clearSearchBtn").addEventListener("click", () => { clearDestination(); });
 
-  $("routeBtn").addEventListener("click", async () => { await requestRoute(); });
+  $("routeBtn").addEventListener("click", async () => { await requestRoute({ activate: true, fit: true }); });
   $("clearRouteBtn").addEventListener("click", () => { clearRoute(); });
+  $("endRouteBtn").addEventListener("click", () => {
+    navigationActive = false;
+    clearRoute({ message: "Route ended. Tap Route to Destination to rebuild." });
+    updateUiLayout();
+  });
   $("followBtn").addEventListener("click", () => {
     if (!currentRouteFeature) return;
     followMode = !followMode;
     updateRouteButtons();
     if (followMode) {
+      navigationActive = true;
       const st = latestSnapshot?.state || {};
       if (st.fix_valid && st.lat_deg != null && st.lon_deg != null) {
         updateFollowCamera(st, true);
