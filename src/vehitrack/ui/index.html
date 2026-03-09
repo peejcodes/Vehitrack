@@ -27,6 +27,26 @@
         <div id="searchResults" class="results"></div>
       </div>
 
+      <div class="panel">
+        <div class="panel-title">Route</div>
+        <div id="routeStatus" class="muted small">Select a destination to build a route.</div>
+        <div class="route-summary-grid">
+          <div class="route-metric">
+            <div class="route-metric-label">Distance</div>
+            <div id="routeDistance" class="route-metric-value">—</div>
+          </div>
+          <div class="route-metric">
+            <div class="route-metric-label">ETA</div>
+            <div id="routeDuration" class="route-metric-value">—</div>
+          </div>
+        </div>
+        <div id="routeMeta" class="muted small route-meta">Current GPS position → selected destination.</div>
+        <div class="button-row two-up top-gap">
+          <button id="routeBtn" type="button">Route to Destination</button>
+          <button id="clearRouteBtn" type="button">Clear Route</button>
+        </div>
+      </div>
+
       <div class="panel controls-panel">
         <div class="panel-title">Trip</div>
         <div class="button-row two-up">

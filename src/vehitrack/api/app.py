@@ -4,9 +4,10 @@ import asyncio
 import json
 import os
 from dataclasses import dataclass
-from typing import Optional, Any, Dict, List
+from typing import Optional, Any, Dict, List, Tuple
 from urllib.parse import urlencode
 from urllib.request import urlopen, Request
+from urllib.error import URLError, HTTPError
 
 import uvicorn
 from fastapi import FastAPI, Response, HTTPException, Query
@@ -41,6 +42,8 @@ class Settings:
     satellite_tile_size: int = 256
     nominatim_url: str = "http://127.0.0.1:7070"
     nominatim_timeout_s: float = 8.0
+    osrm_url: str = "http://127.0.0.1:5001"
+    osrm_timeout_s: float = 8.0
 
     @staticmethod
     def from_env() -> "Settings":
@@ -63,6 +66,8 @@ class Settings:
         s.satellite_tile_size = int(os.getenv("VEHITRACK_SATELLITE_TILE_SIZE", str(s.satellite_tile_size)))
         s.nominatim_url = os.getenv("VEHITRACK_NOMINATIM_URL", s.nominatim_url).rstrip("/")
         s.nominatim_timeout_s = float(os.getenv("VEHITRACK_NOMINATIM_TIMEOUT_S", str(s.nominatim_timeout_s)))
+        s.osrm_url = os.getenv("VEHITRACK_OSRM_URL", s.osrm_url).rstrip("/")
+        s.osrm_timeout_s = float(os.getenv("VEHITRACK_OSRM_TIMEOUT_S", str(s.osrm_timeout_s)))
         return s
 
 
@@ -100,16 +105,27 @@ settings = Settings.from_env()
 app = FastAPI(title="vehitrack", version="0.1.0")
 hub = StateHub()
 rejector = JumpRejector(FilterConfig(max_speed_mps=settings.max_speed_mps))
-store = SqliteStore(LoggingConfig(db_path=settings.db_path, raw_fixes=settings.raw_fixes, min_time_s=settings.min_time_s, min_distance_m=settings.min_distance_m))
+store = SqliteStore(
+    LoggingConfig(
+        db_path=settings.db_path,
+        raw_fixes=settings.raw_fixes,
+        min_time_s=settings.min_time_s,
+        min_distance_m=settings.min_distance_m,
+    )
+)
 mb: Optional[Mbtiles] = Mbtiles(settings.mbtiles_path) if settings.mbtiles_path else None
+
+
+def _read_json_url(url: str, timeout_s: float) -> Any:
+    req = Request(url, headers={"Accept": "application/json", "User-Agent": "vehitrack/0.1"})
+    with urlopen(req, timeout=timeout_s) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
 
 def _nominatim_search(q: str, limit: int) -> List[Dict[str, Any]]:
     params = urlencode({"q": q, "format": "jsonv2", "addressdetails": 1, "limit": max(1, min(limit, 10))})
     url = f"{settings.nominatim_url}/search?{params}"
-    req = Request(url, headers={"Accept": "application/json", "User-Agent": "vehitrack/0.1"})
-    with urlopen(req, timeout=settings.nominatim_timeout_s) as resp:
-        payload = json.loads(resp.read().decode("utf-8"))
+    payload = _read_json_url(url, settings.nominatim_timeout_s)
 
     results: List[Dict[str, Any]] = []
     for item in payload if isinstance(payload, list) else []:
@@ -118,19 +134,112 @@ def _nominatim_search(q: str, limit: int) -> List[Dict[str, Any]]:
             lon_f = float(item.get("lon"))
         except (TypeError, ValueError):
             continue
-        results.append({
-            "label": item.get("display_name") or item.get("name") or "Unnamed result",
-            "name": item.get("name") or item.get("display_name") or "Unnamed result",
-            "lat": lat_f,
-            "lon": lon_f,
-            "osm_type": item.get("osm_type"),
-            "osm_id": item.get("osm_id"),
-            "class": item.get("class") or item.get("category"),
-            "type": item.get("type"),
-            "address": item.get("address") or {},
-            "raw": item,
-        })
+        results.append(
+            {
+                "label": item.get("display_name") or item.get("name") or "Unnamed result",
+                "name": item.get("name") or item.get("display_name") or "Unnamed result",
+                "lat": lat_f,
+                "lon": lon_f,
+                "osm_type": item.get("osm_type"),
+                "osm_id": item.get("osm_id"),
+                "class": item.get("class") or item.get("category"),
+                "type": item.get("type"),
+                "address": item.get("address") or {},
+                "raw": item,
+            }
+        )
     return results
+
+
+def _osrm_json(path_and_query: str) -> Any:
+    url = f"{settings.osrm_url}{path_and_query}"
+    return _read_json_url(url, settings.osrm_timeout_s)
+
+
+def _osrm_nearest(lon: float, lat: float) -> Dict[str, Any]:
+    payload = _osrm_json(f"/nearest/v1/driving/{lon},{lat}?number=1")
+    if not isinstance(payload, dict) or payload.get("code") != "Ok":
+        raise RuntimeError(f"OSRM nearest failed: {payload}")
+    waypoints = payload.get("waypoints") or []
+    if not waypoints:
+        raise RuntimeError("OSRM nearest returned no waypoints")
+    return waypoints[0]
+
+
+def _simplify_steps(route_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    simplified: List[Dict[str, Any]] = []
+    for leg in route_payload.get("legs") or []:
+        for step in leg.get("steps") or []:
+            maneuver = step.get("maneuver") or {}
+            simplified.append(
+                {
+                    "name": step.get("name") or "",
+                    "distance_m": step.get("distance"),
+                    "duration_s": step.get("duration"),
+                    "mode": step.get("mode"),
+                    "driving_side": step.get("driving_side"),
+                    "maneuver": {
+                        "type": maneuver.get("type"),
+                        "modifier": maneuver.get("modifier"),
+                        "instruction": maneuver.get("instruction"),
+                        "bearing_before": maneuver.get("bearing_before"),
+                        "bearing_after": maneuver.get("bearing_after"),
+                        "location": maneuver.get("location"),
+                    },
+                }
+            )
+    return simplified
+
+
+def _route_between(origin: Tuple[float, float], destination: Tuple[float, float], destination_label: str | None = None) -> Dict[str, Any]:
+    origin_lon, origin_lat = origin
+    dest_lon, dest_lat = destination
+
+    snapped_origin = _osrm_nearest(origin_lon, origin_lat)
+    snapped_destination = _osrm_nearest(dest_lon, dest_lat)
+
+    so_lon, so_lat = snapped_origin["location"]
+    sd_lon, sd_lat = snapped_destination["location"]
+
+    payload = _osrm_json(
+        f"/route/v1/driving/{so_lon},{so_lat};{sd_lon},{sd_lat}?steps=true&geometries=geojson&overview=full"
+    )
+    if not isinstance(payload, dict):
+        raise RuntimeError("OSRM route returned invalid payload")
+    if payload.get("code") != "Ok":
+        raise RuntimeError(f"OSRM route failed: {payload.get('code')}")
+    routes = payload.get("routes") or []
+    if not routes:
+        raise RuntimeError("OSRM returned no routes")
+
+    route = routes[0]
+    geometry = route.get("geometry")
+    if not geometry:
+        raise RuntimeError("OSRM route returned no geometry")
+
+    return {
+        "origin_input": {"lon": origin_lon, "lat": origin_lat},
+        "destination_input": {"lon": dest_lon, "lat": dest_lat, "label": destination_label or ""},
+        "origin": {
+            "lon": so_lon,
+            "lat": so_lat,
+            "name": snapped_origin.get("name") or "",
+            "distance_from_input_m": snapped_origin.get("distance"),
+        },
+        "destination": {
+            "lon": sd_lon,
+            "lat": sd_lat,
+            "name": snapped_destination.get("name") or "",
+            "distance_from_input_m": snapped_destination.get("distance"),
+            "label": destination_label or "",
+        },
+        "distance_m": route.get("distance"),
+        "duration_s": route.get("duration"),
+        "weight": route.get("weight"),
+        "geometry": geometry,
+        "steps": _simplify_steps(route),
+        "raw_waypoints": payload.get("waypoints") or [],
+    }
 
 
 @app.on_event("startup")
@@ -233,6 +342,38 @@ async def api_search(q: str = Query(..., min_length=2), limit: int = Query(8, ge
     return {"query": q, "count": len(results), "results": results}
 
 
+@app.post("/api/route")
+async def api_route(payload: Dict[str, Any]) -> Dict[str, Any]:
+    destination = payload.get("destination") or {}
+    try:
+        dest_lat = float(destination.get("lat"))
+        dest_lon = float(destination.get("lon"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Destination lat/lon are required")
+
+    snap = await hub.get_snapshot()
+    st = snap.get("state") or {}
+    if not st.get("fix_valid") or st.get("lat_deg") is None or st.get("lon_deg") is None:
+        raise HTTPException(status_code=409, detail="No valid current GPS fix available for routing")
+
+    try:
+        origin = (float(st["lon_deg"]), float(st["lat_deg"]))
+        result = await asyncio.to_thread(
+            _route_between,
+            origin,
+            (dest_lon, dest_lat),
+            str(destination.get("label") or destination.get("name") or ""),
+        )
+    except HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"OSRM HTTP error: {exc.code}")
+    except URLError as exc:
+        raise HTTPException(status_code=502, detail=f"OSRM connection failed: {exc.reason}")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"OSRM route failed: {exc}")
+
+    return result
+
+
 @app.get("/api/trips")
 async def trips_list() -> Dict[str, Any]:
     return {"active_trip_id": store.active_trip_id(), "trips": store.list_trips()}
@@ -263,7 +404,11 @@ async def trips_export_csv(trip_id: int) -> Response:
     if not pts:
         raise HTTPException(status_code=404, detail="No points")
     data = export_csv(pts)
-    return Response(content=data, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="trip_{trip_id}.csv"'})
+    return Response(
+        content=data,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="trip_{trip_id}.csv"'},
+    )
 
 
 @app.get("/api/trips/{trip_id}/export.gpx")
@@ -272,7 +417,11 @@ async def trips_export_gpx(trip_id: int) -> Response:
     if not pts:
         raise HTTPException(status_code=404, detail="No points")
     data = export_gpx(pts, name=f"Trip {trip_id}")
-    return Response(content=data, media_type="application/gpx+xml", headers={"Content-Disposition": f'attachment; filename="trip_{trip_id}.gpx"'})
+    return Response(
+        content=data,
+        media_type="application/gpx+xml",
+        headers={"Content-Disposition": f'attachment; filename="trip_{trip_id}.gpx"'},
+    )
 
 
 @app.get("/api/trips/{trip_id}/export.kml")
@@ -281,7 +430,11 @@ async def trips_export_kml(trip_id: int) -> Response:
     if not pts:
         raise HTTPException(status_code=404, detail="No points")
     data = export_kml(pts, name=f"Trip {trip_id}")
-    return Response(content=data, media_type="application/vnd.google-earth.kml+xml", headers={"Content-Disposition": f'attachment; filename="trip_{trip_id}.kml"'})
+    return Response(
+        content=data,
+        media_type="application/vnd.google-earth.kml+xml",
+        headers={"Content-Disposition": f'attachment; filename="trip_{trip_id}.kml"'},
+    )
 
 
 @app.get("/tiles/{z}/{x}/{y}.png")
@@ -299,30 +452,27 @@ async def health() -> str:
     snap = await hub.get_snapshot()
     st = snap["state"]
     age = snap["age_s"]
-    mph = None
-    if st.get("speed_mps") is not None:
-        mph = float(st["speed_mps"]) * 2.2369362920544
+    mph = None if st.get("speed_mps") is None else float(st["speed_mps"]) * 2.2369362920544
     active = store.active_trip_id()
     return f"""
-<!doctype html>
-<html>
-  <body>
+    <html><body>
     <h2>vehitrack</h2>
-    <p><b>fix_valid</b> {st.get('fix_valid')}</p>
-    <p><b>fix_type</b> {st.get('fix_type')}</p>
-    <p><b>lat, lon</b> {st.get('lat_deg')}, {st.get('lon_deg')}</p>
-    <p><b>speed</b> {st.get('speed_mps')} m/s {f'({mph:.1f} mph)' if mph is not None else ''}</p>
-    <p><b>course</b> {st.get('course_deg')}°</p>
-    <p><b>sats_used</b> {st.get('sats_used')}</p>
-    <p><b>hdop</b> {st.get('hdop')}</p>
-    <p><b>age</b> {age:.2f}s</p>
-    <p><b>update_reason</b> {snap.get('update_reason')}</p>
-    <p><b>trip_active</b> {active if active else 'no'}</p>
-    <p><b>logged_last</b> {snap.get('logged_last')}</p>
-    <p><a href='/'>Open UI</a></p>
-  </body>
-</html>
-"""
+    <pre>
+fix_valid      {st.get("fix_valid")}
+fix_type       {st.get("fix_type")}
+lat, lon       {st.get("lat_deg")}, {st.get("lon_deg")}
+speed          {st.get("speed_mps")} m/s {f"({mph:.1f} mph)" if mph is not None else ""}
+course         {st.get("course_deg")}°
+sats_used      {st.get("sats_used")}
+hdop           {st.get("hdop")}
+age            {age:.2f}s
+update_reason  {snap.get("update_reason")}
+trip_active    {active if active else "no"}
+logged_last    {snap.get("logged_last")}
+    </pre>
+    <p><a href="/">Open UI</a></p>
+    </body></html>
+    """
 
 
 def main() -> None:
