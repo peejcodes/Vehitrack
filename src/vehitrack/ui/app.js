@@ -27,6 +27,11 @@ let lastTripForExport = null;
 let activeTripId = null;
 let currentActiveLine = [];
 let currentRouteFeature = null;
+let currentRoutePayload = null;
+let currentRouteMetrics = null;
+let currentRouteSteps = [];
+let currentNavStepIndex = -1;
+let followMode = false;
 let latestSnapshot = { state: null };
 const GEO_SOURCE_ID = "vehitrack-overlays";
 
@@ -89,8 +94,16 @@ function updateThemeButtons() {
 function updateRouteButtons() {
   const routeBtn = $("routeBtn");
   const clearBtn = $("clearRouteBtn");
+  const followBtn = $("followBtn");
+  const overviewBtn = $("overviewBtn");
   if (routeBtn) routeBtn.disabled = !destination;
   if (clearBtn) clearBtn.disabled = !currentRouteFeature;
+  if (followBtn) {
+    followBtn.disabled = !currentRouteFeature;
+    followBtn.textContent = followMode ? "Follow On" : "Follow Off";
+    followBtn.classList.toggle("active", followMode);
+  }
+  if (overviewBtn) overviewBtn.disabled = !map || (!currentRouteFeature && !(latestSnapshot?.state?.fix_valid));
 }
 
 async function apiGet(url) {
@@ -253,27 +266,90 @@ function applyDestinationMarker() {
   destinationMarker = new maplibregl.Marker({ element: el }).setLngLat([destination.lon, destination.lat]).addTo(map);
 }
 
+function buildInstructionFromStep(step) {
+  const man = step?.maneuver || {};
+  const type = (man.type || "continue").toLowerCase();
+  const modifier = (man.modifier || "").toLowerCase();
+  const road = step?.name || "";
+  const onto = road ? ` onto ${road}` : "";
+  if (type === "depart") return `Depart${onto}`;
+  if (type === "arrive") {
+    if (modifier === "left") return "Arrive at destination on the left";
+    if (modifier === "right") return "Arrive at destination on the right";
+    return "Arrive at destination";
+  }
+  if (type === "roundabout") return `Enter the roundabout${onto}`;
+  if (type === "rotary") return `Enter the rotary${onto}`;
+  if (type === "merge") return `Merge${onto}`;
+  if (type === "fork") return modifier ? `Keep ${modifier}${onto}` : `Keep${onto}`;
+  if (type === "on ramp") return `Take the ramp${onto}`;
+  if (type === "off ramp") return `Take the exit${onto}`;
+  if (type === "end of road") return modifier ? `At the end of the road, turn ${modifier}${onto}` : `At the end of the road, continue${onto}`;
+  if (type === "new name") return `Continue${onto}`;
+  if (type === "continue") return modifier ? `Continue ${modifier}${onto}` : `Continue${onto}`;
+  if (type === "turn") return modifier ? `Turn ${modifier}${onto}` : `Turn${onto}`;
+  return `${type.replaceAll("_", " ")}${onto}`;
+}
+
+function renderStepList() {
+  const wrap = $("stepsList");
+  if (!wrap) return;
+  if (!currentRouteSteps.length) {
+    wrap.innerHTML = '<div class="muted small">No route loaded.</div>';
+    return;
+  }
+  wrap.innerHTML = currentRouteSteps.map((step, idx) => {
+    const instruction = escapeHtml(step.instruction || buildInstructionFromStep(step));
+    const road = step.name ? ` • ${escapeHtml(step.name)}` : "";
+    return `
+      <div class="step-row ${idx === currentNavStepIndex ? "active" : ""}">
+        <div class="step-index">${idx + 1}</div>
+        <div>
+          <div class="step-instruction">${instruction}</div>
+          <div class="step-meta">${formatDistance(step.distance_m)}${road}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function resetGuidanceUi(message = "Route guidance idle.") {
+  setText("nextInstruction", "—");
+  setText("nextDistance", "—");
+  setText("remainingDistance", "—");
+  setText("remainingEta", "—");
+  setText("navStatus", message);
+  currentNavStepIndex = -1;
+  renderStepList();
+}
+
 function resetRouteUi(message = "Select a destination to build a route.") {
   setRouteStatus(message);
   setText("routeDistance", "—");
   setText("routeDuration", "—");
   setText("routeMeta", "Current GPS position → selected destination.");
+  resetGuidanceUi("Route guidance idle.");
   updateRouteButtons();
 }
 
 function clearRoute() {
   currentRouteFeature = null;
+  currentRoutePayload = null;
+  currentRouteMetrics = null;
+  currentRouteSteps = [];
+  currentNavStepIndex = -1;
+  followMode = false;
   if (map && mapReady) ensureOverlays();
   resetRouteUi(destination ? "Route cleared. Destination still selected." : "Select a destination to build a route.");
 }
 
 function setSelectedDestination(result) {
-  destination = result;
+  destination = { ...result, lat: Number(result.lat), lon: Number(result.lon) };
   setText("selectedDestination", `Destination: ${result.label}`);
   updateRouteButtons();
   if (map) {
     applyDestinationMarker();
-    map.flyTo({ center: [result.lon, result.lat], zoom: Math.max(map.getZoom(), 14) });
+    map.flyTo({ center: [destination.lon, destination.lat], zoom: Math.max(map.getZoom(), 14) });
   }
 }
 
@@ -325,6 +401,167 @@ function fitGeometry(geometry) {
   map.fitBounds(bounds, { padding: 48, duration: 700, maxZoom: 15 });
 }
 
+function haversineMeters(a, b) {
+  const toRad = Math.PI / 180;
+  const [lon1, lat1] = a;
+  const [lon2, lat2] = b;
+  const dLat = (lat2 - lat1) * toRad;
+  const dLon = (lon2 - lon1) * toRad;
+  const rLat1 = lat1 * toRad;
+  const rLat2 = lat2 * toRad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rLat1) * Math.cos(rLat2) * Math.sin(dLon / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function toMetersXY(coord, refLat) {
+  const rad = Math.PI / 180;
+  return {
+    x: coord[0] * 111320 * Math.cos(refLat * rad),
+    y: coord[1] * 110540
+  };
+}
+
+function buildRouteMetrics(coords) {
+  const cumulative = [0];
+  const segmentLengths = [];
+  let total = 0;
+  for (let i = 0; i < coords.length - 1; i += 1) {
+    const len = haversineMeters(coords[i], coords[i + 1]);
+    segmentLengths.push(len);
+    total += len;
+    cumulative.push(total);
+  }
+  return { coords, cumulative, segmentLengths, totalM: total };
+}
+
+function snapPointToLineProgress(point, metrics) {
+  const coords = metrics?.coords || [];
+  if (coords.length < 2) {
+    return { progressM: 0, distanceM: Infinity, snapped: point };
+  }
+  let best = { progressM: 0, distanceM: Infinity, snapped: coords[0] };
+  for (let i = 0; i < coords.length - 1; i += 1) {
+    const a = coords[i];
+    const b = coords[i + 1];
+    const refLat = (a[1] + b[1] + point[1]) / 3;
+    const pxy = toMetersXY(point, refLat);
+    const axy = toMetersXY(a, refLat);
+    const bxy = toMetersXY(b, refLat);
+    const vx = bxy.x - axy.x;
+    const vy = bxy.y - axy.y;
+    const lenSq = vx * vx + vy * vy;
+    const t = lenSq <= 0 ? 0 : Math.max(0, Math.min(1, ((pxy.x - axy.x) * vx + (pxy.y - axy.y) * vy) / lenSq));
+    const projX = axy.x + vx * t;
+    const projY = axy.y + vy * t;
+    const dist = Math.hypot(pxy.x - projX, pxy.y - projY);
+    if (dist < best.distanceM) {
+      const segLen = metrics.segmentLengths[i] || 0;
+      best = {
+        distanceM: dist,
+        progressM: (metrics.cumulative[i] || 0) + segLen * t,
+        snapped: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
+      };
+    }
+  }
+  return best;
+}
+
+function normaliseRouteSteps(steps, metrics) {
+  return (steps || []).map((step, index) => {
+    const location = Array.isArray(step.location)
+      ? step.location
+      : (Array.isArray(step?.maneuver?.location) ? step.maneuver.location : null);
+    const snapped = location ? snapPointToLineProgress(location, metrics) : null;
+    return {
+      ...step,
+      index,
+      instruction: step.instruction || buildInstructionFromStep(step),
+      location,
+      progressM: snapped ? snapped.progressM : null
+    };
+  });
+}
+
+function showOverview() {
+  followMode = false;
+  updateRouteButtons();
+  if (currentRouteFeature?.geometry) {
+    fitGeometry(currentRouteFeature.geometry);
+    return;
+  }
+  const st = latestSnapshot?.state || {};
+  if (map && st.fix_valid && st.lat_deg != null && st.lon_deg != null) {
+    map.easeTo({ center: [st.lon_deg, st.lat_deg], zoom: Math.max(map.getZoom(), 14), pitch: 0, bearing: 0, duration: 600 });
+  }
+}
+
+function updateFollowCamera(st, immediate = false) {
+  if (!map || !mapReady || !followMode || !st?.fix_valid || st.lat_deg == null || st.lon_deg == null) return;
+  const mph = st.speed_mps == null ? 0 : speedToMph(st.speed_mps);
+  const bearing = mph >= 2 && st.course_deg != null ? Number(st.course_deg) : map.getBearing();
+  const options = {
+    center: [st.lon_deg, st.lat_deg],
+    zoom: Math.max(map.getZoom(), 16),
+    pitch: 55,
+    bearing,
+    offset: [0, 150],
+    essential: true
+  };
+  if (immediate) {
+    map.jumpTo(options);
+  } else {
+    map.easeTo({ ...options, duration: 500 });
+  }
+}
+
+function updateNavigationFromSnapshot(snapshot) {
+  if (!currentRouteMetrics || !currentRouteSteps.length || !currentRoutePayload) {
+    updateRouteButtons();
+    return;
+  }
+  const st = snapshot?.state || {};
+  if (!st.fix_valid || st.lat_deg == null || st.lon_deg == null) {
+    setText("navStatus", "Waiting for a valid GPS fix to drive the route.");
+    updateRouteButtons();
+    return;
+  }
+
+  const progress = snapPointToLineProgress([Number(st.lon_deg), Number(st.lat_deg)], currentRouteMetrics);
+  const remainingM = Math.max(0, currentRouteMetrics.totalM - progress.progressM);
+  const totalDistance = Number(currentRoutePayload.distance_m || currentRouteMetrics.totalM || 0);
+  const totalDuration = Number(currentRoutePayload.duration_s || 0);
+  const remainingS = totalDistance > 0 ? totalDuration * (remainingM / totalDistance) : null;
+
+  let nextIndex = currentRouteSteps.findIndex((step) => step.progressM == null || step.progressM > progress.progressM + 20);
+  if (nextIndex === -1) nextIndex = currentRouteSteps.length - 1;
+  currentNavStepIndex = nextIndex;
+
+  setText("remainingDistance", formatDistance(remainingM));
+  setText("remainingEta", formatDuration(remainingS));
+
+  if (remainingM <= 30) {
+    setText("nextInstruction", "Arrive at destination");
+    setText("nextDistance", "Now");
+    setText("navStatus", "You have arrived.");
+    renderStepList();
+    updateFollowCamera(st);
+    updateRouteButtons();
+    return;
+  }
+
+  const nextStep = currentRouteSteps[nextIndex];
+  const nextDistance = nextStep?.progressM != null
+    ? Math.max(0, nextStep.progressM - progress.progressM)
+    : (nextStep?.location ? haversineMeters([Number(st.lon_deg), Number(st.lat_deg)], nextStep.location) : null);
+
+  setText("nextInstruction", nextStep?.instruction || "Continue");
+  setText("nextDistance", formatDistance(nextDistance));
+  setText("navStatus", `Following route • off-line distance to route centerline ${Math.round(progress.distanceM)} m`);
+  renderStepList();
+  updateFollowCamera(st);
+  updateRouteButtons();
+}
+
 async function requestRoute() {
   if (!destination) {
     setRouteStatus("Select a destination first.");
@@ -337,30 +574,40 @@ async function requestRoute() {
   try {
     const payload = await apiPost("/api/route", {
       destination: {
-        lat: destination.lat,
-        lon: destination.lon,
-        label: destination.label,
-        name: destination.name
+        lat: Number(destination.lat),
+        lon: Number(destination.lon),
+        label: destination.label
       }
     });
+    currentRoutePayload = payload;
     currentRouteFeature = {
       type: "Feature",
       geometry: payload.geometry,
       properties: { kind: "route" }
     };
+    currentRouteMetrics = buildRouteMetrics(payload.geometry.coordinates || []);
+    currentRouteSteps = normaliseRouteSteps(payload.steps || [], currentRouteMetrics);
+    currentNavStepIndex = currentRouteSteps.length ? 0 : -1;
+
     setText("routeDistance", formatDistance(payload.distance_m));
     setText("routeDuration", formatDuration(payload.duration_s));
     const originName = payload.origin?.name || "road";
     const destName = payload.destination?.name || "destination road";
     setText("routeMeta", `Snapped from ${originName} to ${destName}.`);
     setRouteStatus(`Route ready${payload.steps?.length ? ` • ${payload.steps.length} step(s)` : ""}.`);
+
     if (map && mapReady) {
       ensureOverlays();
       fitGeometry(payload.geometry);
     }
+    updateNavigationFromSnapshot(latestSnapshot);
   } catch (error) {
     console.error(error);
     currentRouteFeature = null;
+    currentRoutePayload = null;
+    currentRouteMetrics = null;
+    currentRouteSteps = [];
+    currentNavStepIndex = -1;
     if (map && mapReady) ensureOverlays();
     resetRouteUi(`Routing failed: ${error.message || error}`);
   } finally {
@@ -442,6 +689,7 @@ async function tick() {
       hasAutoCentered = true;
     }
   }
+  updateNavigationFromSnapshot(snap);
 }
 
 function download(url) { window.location.href = url; }
@@ -450,11 +698,31 @@ function bindUi() {
   $("searchForm").addEventListener("submit", async (event) => { event.preventDefault(); await performSearch(); });
   $("routeBtn").addEventListener("click", async () => { await requestRoute(); });
   $("clearRouteBtn").addEventListener("click", () => { clearRoute(); });
+  $("followBtn").addEventListener("click", () => {
+    if (!currentRouteFeature) return;
+    followMode = !followMode;
+    updateRouteButtons();
+    if (followMode) {
+      const st = latestSnapshot?.state || {};
+      if (st.fix_valid && st.lat_deg != null && st.lon_deg != null) {
+        updateFollowCamera(st, true);
+        setText("navStatus", "Follow mode enabled.");
+      } else {
+        setText("navStatus", "Follow mode enabled. Waiting for valid GPS fix.");
+      }
+    } else {
+      if (map) map.easeTo({ pitch: 0, duration: 500 });
+      setText("navStatus", "Follow mode disabled.");
+    }
+  });
+  $("overviewBtn").addEventListener("click", () => { showOverview(); });
+
   $("startBtn").addEventListener("click", async () => { await apiPost("/api/trips/start", { name: "Trip" }); await refreshTrips(); });
   $("stopBtn").addEventListener("click", async () => { await apiPost("/api/trips/stop"); await refreshTrips(); });
   $("csvBtn").addEventListener("click", () => { if (lastTripForExport) download(`/api/trips/${lastTripForExport}/export.csv`); });
   $("gpxBtn").addEventListener("click", () => { if (lastTripForExport) download(`/api/trips/${lastTripForExport}/export.gpx`); });
   $("kmlBtn").addEventListener("click", () => { if (lastTripForExport) download(`/api/trips/${lastTripForExport}/export.kml`); });
+
   document.querySelectorAll("[data-theme]").forEach((button) => {
     button.addEventListener("click", () => {
       const nextTheme = button.dataset.theme;
@@ -469,6 +737,7 @@ function bindUi() {
       }
     });
   });
+
   $("satelliteBtn").addEventListener("click", () => {
     if (!satelliteAvailable || !map) return;
     satelliteVisible = !satelliteVisible;

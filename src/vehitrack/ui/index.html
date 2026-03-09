@@ -6,7 +6,7 @@
   <title>vehitrack</title>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
-  <link href="/static/styles.css" rel="stylesheet" />
+  <link href="/static/styles.css?v=nav2" rel="stylesheet" />
 </head>
 <body class="theme-dark">
   <div class="app-shell">
@@ -44,6 +44,37 @@
         <div class="button-row two-up top-gap">
           <button id="routeBtn" type="button">Route to Destination</button>
           <button id="clearRouteBtn" type="button">Clear Route</button>
+        </div>
+        <div class="button-row two-up top-gap">
+          <button id="followBtn" type="button">Follow Off</button>
+          <button id="overviewBtn" type="button">Overview</button>
+        </div>
+      </div>
+
+      <div class="panel nav-panel">
+        <div class="panel-title">Navigation</div>
+        <div class="next-turn-card">
+          <div class="next-turn-label">Next maneuver</div>
+          <div id="nextInstruction" class="next-turn-instruction">—</div>
+          <div class="next-turn-grid">
+            <div class="route-metric compact">
+              <div class="route-metric-label">In</div>
+              <div id="nextDistance" class="route-metric-value">—</div>
+            </div>
+            <div class="route-metric compact">
+              <div class="route-metric-label">Remain</div>
+              <div id="remainingDistance" class="route-metric-value">—</div>
+            </div>
+            <div class="route-metric compact">
+              <div class="route-metric-label">Remain ETA</div>
+              <div id="remainingEta" class="route-metric-value">—</div>
+            </div>
+          </div>
+          <div id="navStatus" class="muted small top-gap">Route guidance idle.</div>
+        </div>
+        <div class="steps-title">Turn-by-turn</div>
+        <div id="stepsList" class="steps-list">
+          <div class="muted small">No route loaded.</div>
         </div>
       </div>
 
@@ -92,6 +123,6 @@
     </main>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=nav2"></script>
 </body>
 </html>

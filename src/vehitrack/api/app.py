@@ -166,28 +166,100 @@ def _osrm_nearest(lon: float, lat: float) -> Dict[str, Any]:
     return waypoints[0]
 
 
+
+def _build_step_instruction(step: Dict[str, Any]) -> str:
+    maneuver = step.get("maneuver") or {}
+    mtype = str(maneuver.get("type") or "continue")
+    modifier = str(maneuver.get("modifier") or "")
+    name = str(step.get("name") or "").strip()
+    ref = str(step.get("ref") or "").strip()
+    destinations = str(step.get("destinations") or "").strip()
+    road = name or ref or destinations
+
+    def on_road(prefix: str) -> str:
+        return f"{prefix} onto {road}" if road else prefix
+
+    if mtype == "depart":
+        return on_road("Depart")
+    if mtype == "arrive":
+        if modifier == "left":
+            return "Arrive at destination on the left"
+        if modifier == "right":
+            return "Arrive at destination on the right"
+        return "Arrive at destination"
+    if mtype == "roundabout":
+        return on_road("Enter the roundabout")
+    if mtype == "rotary":
+        return on_road("Enter the rotary")
+    if mtype == "merge":
+        return on_road("Merge")
+    if mtype == "fork":
+        if modifier:
+            return on_road(f"Keep {modifier}")
+        return on_road("Keep")
+    if mtype == "on ramp":
+        return on_road("Take the ramp")
+    if mtype == "off ramp":
+        return on_road("Take the exit")
+    if mtype == "end of road":
+        if modifier:
+            return on_road(f"At the end of the road, turn {modifier}")
+        return on_road("At the end of the road, continue")
+    if mtype == "new name":
+        return on_road("Continue")
+    if mtype == "continue":
+        if modifier:
+            return on_road(f"Continue {modifier}")
+        return on_road("Continue")
+    if mtype == "turn":
+        if modifier:
+            return on_road(f"Turn {modifier}")
+        return on_road("Turn")
+    if mtype == "use lane":
+        return on_road("Use the marked lane")
+    if mtype == "notification":
+        return on_road("Continue")
+    return on_road(mtype.replace("_", " ").capitalize())
+
+
 def _simplify_steps(route_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     simplified: List[Dict[str, Any]] = []
+    step_index = 0
     for leg in route_payload.get("legs") or []:
         for step in leg.get("steps") or []:
             maneuver = step.get("maneuver") or {}
+            intersections = step.get("intersections") or []
+            location = maneuver.get("location")
+            if location is None and intersections:
+                first = intersections[0] or {}
+                location = first.get("location")
+            geometry = step.get("geometry") or {}
+            if location is None and geometry.get("type") == "LineString":
+                coords = geometry.get("coordinates") or []
+                if coords:
+                    location = coords[0]
+
             simplified.append(
                 {
+                    "index": step_index,
                     "name": step.get("name") or "",
                     "distance_m": step.get("distance"),
                     "duration_s": step.get("duration"),
                     "mode": step.get("mode"),
                     "driving_side": step.get("driving_side"),
+                    "instruction": _build_step_instruction(step),
+                    "location": location,
                     "maneuver": {
                         "type": maneuver.get("type"),
                         "modifier": maneuver.get("modifier"),
                         "instruction": maneuver.get("instruction"),
                         "bearing_before": maneuver.get("bearing_before"),
                         "bearing_after": maneuver.get("bearing_after"),
-                        "location": maneuver.get("location"),
+                        "location": location,
                     },
                 }
             )
+            step_index += 1
     return simplified
 
 
@@ -327,6 +399,7 @@ async def api_ui_config() -> Dict[str, Any]:
         "satellite_maxzoom": settings.satellite_maxzoom,
         "satellite_tile_size": settings.satellite_tile_size,
         "nominatim_url": settings.nominatim_url,
+        "osrm_url": settings.osrm_url,
     }
 
 
