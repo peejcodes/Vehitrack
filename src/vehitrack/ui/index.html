@@ -6,123 +6,172 @@
   <title>vehitrack</title>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
-  <link href="/static/styles.css?v=nav2" rel="stylesheet" />
+  <link href="/static/styles.css?v=ui4" rel="stylesheet" />
 </head>
-<body class="theme-dark">
-  <div class="app-shell">
-    <aside class="sidebar">
-      <div class="panel brand-panel">
-        <div class="brand-title">vehitrack</div>
-        <div id="mapStatus" class="muted">Loading map…</div>
+<body class="theme-dark" data-mode="search">
+  <div id="mapFrame" class="map-frame">
+    <div id="map"></div>
+
+    <header class="topbar glass">
+      <div class="brand-lockup">
+        <div class="brand-mark">v</div>
+        <div>
+          <div class="brand-title">vehitrack</div>
+          <div id="mapStatus" class="micro muted">Loading map…</div>
+        </div>
       </div>
 
-      <div class="panel">
-        <div class="panel-title">Destination</div>
-        <form id="searchForm" class="search-form">
+      <form id="searchForm" class="search-form">
+        <div class="search-input-wrap">
           <input id="searchInput" type="text" placeholder="Search address or place" autocomplete="off" />
-          <button id="searchBtn" type="submit">Search</button>
-        </form>
-        <div id="searchStatus" class="muted small">Offline search is ready when Nominatim is running.</div>
-        <div id="selectedDestination" class="selected-destination">Destination: —</div>
-        <div id="searchResults" class="results"></div>
-      </div>
+          <button id="clearSearchBtn" type="button" class="ghost-btn small-btn">Clear</button>
+        </div>
+        <button id="searchBtn" type="submit">Search</button>
+      </form>
 
-      <div class="panel">
-        <div class="panel-title">Route</div>
-        <div id="routeStatus" class="muted small">Select a destination to build a route.</div>
-        <div class="route-summary-grid">
-          <div class="route-metric">
-            <div class="route-metric-label">Distance</div>
-            <div id="routeDistance" class="route-metric-value">—</div>
+      <div class="topbar-actions">
+        <div id="destinationChip" class="destination-chip">No destination</div>
+        <button id="toolsToggleBtn" type="button" class="ghost-btn">Tools</button>
+      </div>
+    </header>
+
+    <section id="searchPanel" class="search-panel glass">
+      <div class="section-head">
+        <div>
+          <div class="section-title">Destination search</div>
+          <div id="searchStatus" class="micro muted">Offline search is ready when Nominatim is running.</div>
+        </div>
+      </div>
+      <div id="searchResults" class="results"></div>
+    </section>
+
+    <section id="navBanner" class="nav-banner glass">
+      <div class="nav-primary">
+        <div class="micro muted">Next maneuver</div>
+        <div id="nextInstruction" class="nav-instruction">—</div>
+        <div id="navStatus" class="micro muted">Route guidance idle.</div>
+      </div>
+      <div class="nav-metrics">
+        <div class="metric-pill big">
+          <span>In</span>
+          <strong id="nextDistance">—</strong>
+        </div>
+        <div class="metric-pill">
+          <span>Remain</span>
+          <strong id="remainingDistance">—</strong>
+        </div>
+        <div class="metric-pill">
+          <span>ETA</span>
+          <strong id="remainingEta">—</strong>
+        </div>
+      </div>
+    </section>
+
+    <section id="routeCard" class="route-card glass">
+      <div class="route-card-head">
+        <div>
+          <div class="section-title">Route</div>
+          <div id="selectedDestination" class="micro muted">Destination: —</div>
+        </div>
+        <div class="route-card-metrics">
+          <div class="metric-tile">
+            <span>Distance</span>
+            <strong id="routeDistance">—</strong>
           </div>
-          <div class="route-metric">
-            <div class="route-metric-label">ETA</div>
-            <div id="routeDuration" class="route-metric-value">—</div>
+          <div class="metric-tile">
+            <span>Drive time</span>
+            <strong id="routeDuration">—</strong>
           </div>
         </div>
-        <div id="routeMeta" class="muted small route-meta">Current GPS position → selected destination.</div>
-        <div class="button-row two-up top-gap">
-          <button id="routeBtn" type="button">Route to Destination</button>
-          <button id="clearRouteBtn" type="button">Clear Route</button>
-        </div>
-        <div class="button-row two-up top-gap">
-          <button id="followBtn" type="button">Follow Off</button>
-          <button id="overviewBtn" type="button">Overview</button>
-        </div>
       </div>
 
-      <div class="panel nav-panel">
-        <div class="panel-title">Navigation</div>
-        <div class="next-turn-card">
-          <div class="next-turn-label">Next maneuver</div>
-          <div id="nextInstruction" class="next-turn-instruction">—</div>
-          <div class="next-turn-grid">
-            <div class="route-metric compact">
-              <div class="route-metric-label">In</div>
-              <div id="nextDistance" class="route-metric-value">—</div>
-            </div>
-            <div class="route-metric compact">
-              <div class="route-metric-label">Remain</div>
-              <div id="remainingDistance" class="route-metric-value">—</div>
-            </div>
-            <div class="route-metric compact">
-              <div class="route-metric-label">Remain ETA</div>
-              <div id="remainingEta" class="route-metric-value">—</div>
-            </div>
-          </div>
-          <div id="navStatus" class="muted small top-gap">Route guidance idle.</div>
-        </div>
-        <div class="steps-title">Turn-by-turn</div>
-        <div id="stepsList" class="steps-list">
-          <div class="muted small">No route loaded.</div>
-        </div>
-      </div>
+      <div id="routeStatus" class="micro muted">Select a destination to build a route.</div>
+      <div id="routeMeta" class="micro muted route-meta">Current GPS position → selected destination.</div>
 
-      <div class="panel controls-panel">
-        <div class="panel-title">Trip</div>
-        <div class="button-row two-up">
-          <button id="startBtn" type="button">Start Trip</button>
-          <button id="stopBtn" type="button">Stop Trip</button>
-        </div>
-        <div class="button-row three-up">
-          <button id="csvBtn" type="button">Export CSV</button>
-          <button id="gpxBtn" type="button">Export GPX</button>
-          <button id="kmlBtn" type="button">Export KML</button>
-        </div>
+      <div class="route-actions">
+        <button id="routeBtn" type="button">Route to Destination</button>
+        <button id="clearRouteBtn" type="button" class="ghost-btn">Clear Route</button>
       </div>
+    </section>
 
-      <div class="panel controls-panel">
-        <div class="panel-title">Map Theme</div>
-        <div class="button-row three-up">
-          <button type="button" data-theme="light">Light</button>
-          <button type="button" data-theme="dark">Dark</button>
-          <button type="button" data-theme="amethyst">Amethyst</button>
+    <div class="floating-actions glass-stack">
+      <button id="followBtn" type="button">Follow</button>
+      <button id="overviewBtn" type="button" class="ghost-btn">Overview</button>
+      <button id="stepsToggleBtn" type="button" class="ghost-btn">Steps</button>
+    </div>
+
+    <div class="status-strip glass">
+      <div class="metric-pill compact"><span>Fix</span><strong id="fixv">—</strong></div>
+      <div class="metric-pill compact"><span>Speed</span><strong id="speedv">—</strong></div>
+      <div class="metric-pill compact"><span>Sats</span><strong id="satsv">—</strong></div>
+      <div class="metric-pill compact"><span>HDOP</span><strong id="hdopv">—</strong></div>
+      <div class="metric-pill compact"><span>Age</span><strong id="agev">—</strong></div>
+      <div class="metric-pill compact"><span>Trip</span><strong id="tripv">—</strong></div>
+    </div>
+
+    <aside id="stepsDrawer" class="steps-drawer glass">
+      <div class="drawer-head">
+        <div>
+          <div class="section-title">Turn-by-turn</div>
+          <div class="micro muted">Full route steps</div>
         </div>
-        <div class="button-row one-up top-gap">
-          <button id="satelliteBtn" type="button">Satellite N/A</button>
-        </div>
+        <button id="closeStepsBtn" type="button" class="ghost-btn small-btn">Close</button>
       </div>
-
-      <div class="stats-grid">
-        <div class="stat-card"><div class="stat-label">Fix</div><div id="fixv" class="stat-value">—</div></div>
-        <div class="stat-card"><div class="stat-label">Speed</div><div id="speedv" class="stat-value">—</div></div>
-        <div class="stat-card"><div class="stat-label">Sats</div><div id="satsv" class="stat-value">—</div></div>
-        <div class="stat-card"><div class="stat-label">HDOP</div><div id="hdopv" class="stat-value">—</div></div>
-        <div class="stat-card"><div class="stat-label">Age</div><div id="agev" class="stat-value">—</div></div>
-        <div class="stat-card"><div class="stat-label">Trip</div><div id="tripv" class="stat-value">—</div></div>
-      </div>
-
-      <div class="panel info-panel">
-        <div id="posv">Position: —</div>
-        <div id="reasonv">Reason: —</div>
+      <div id="stepsList" class="steps-list">
+        <div class="muted micro">No route loaded.</div>
       </div>
     </aside>
 
-    <main class="map-column">
-      <div id="map"></div>
-    </main>
+    <aside id="toolsDrawer" class="tools-drawer glass">
+      <div class="drawer-head sticky">
+        <div>
+          <div class="section-title">Tools</div>
+          <div class="micro muted">Trip controls, theme, and diagnostics</div>
+        </div>
+        <button id="closeToolsBtn" type="button" class="ghost-btn small-btn">Close</button>
+      </div>
+
+      <div class="drawer-block">
+        <div class="section-title small-title">Trip</div>
+        <div class="button-grid two-up">
+          <button id="startBtn" type="button">Start Trip</button>
+          <button id="stopBtn" type="button" class="ghost-btn">Stop Trip</button>
+        </div>
+        <div class="button-grid three-up top-gap">
+          <button id="csvBtn" type="button" class="ghost-btn">CSV</button>
+          <button id="gpxBtn" type="button" class="ghost-btn">GPX</button>
+          <button id="kmlBtn" type="button" class="ghost-btn">KML</button>
+        </div>
+      </div>
+
+      <div class="drawer-block">
+        <div class="section-title small-title">Map theme</div>
+        <div class="button-grid three-up">
+          <button type="button" data-theme="light" class="ghost-btn">Light</button>
+          <button type="button" data-theme="dark" class="ghost-btn">Dark</button>
+          <button type="button" data-theme="amethyst" class="ghost-btn">Amethyst</button>
+        </div>
+        <button id="satelliteBtn" type="button" class="ghost-btn full-width top-gap">Satellite N/A</button>
+      </div>
+
+      <div class="drawer-block">
+        <div class="section-title small-title">Vehicle + GPS</div>
+        <div class="stats-grid compact-grid">
+          <div class="stat-card"><div class="stat-label">Fix</div><div id="fixv_tools" class="stat-value">—</div></div>
+          <div class="stat-card"><div class="stat-label">Speed</div><div id="speedv_tools" class="stat-value">—</div></div>
+          <div class="stat-card"><div class="stat-label">Sats</div><div id="satsv_tools" class="stat-value">—</div></div>
+          <div class="stat-card"><div class="stat-label">HDOP</div><div id="hdopv_tools" class="stat-value">—</div></div>
+          <div class="stat-card"><div class="stat-label">Age</div><div id="agev_tools" class="stat-value">—</div></div>
+          <div class="stat-card"><div class="stat-label">Trip</div><div id="tripv_tools" class="stat-value">—</div></div>
+        </div>
+        <div class="info-panel top-gap">
+          <div id="posv">Position: —</div>
+          <div id="reasonv">Reason: —</div>
+        </div>
+      </div>
+    </aside>
   </div>
 
-  <script src="/static/app.js?v=nav2"></script>
+  <script src="/static/app.js?v=ui4"></script>
 </body>
 </html>
