@@ -3,6 +3,7 @@
 Offline, map-first GPS logger for in-vehicle Linux mini PCs.
 
 ## Prereqs
+- NMEA gps reviever
 - gpsd running and reading your receiver (recommended)
 - Python 3.11+
 
