@@ -1,185 +1,168 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>vehitrack</title>
-  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
-  <link href="/static/styles.css?v=ui8" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script defer src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script defer src="/static/app.js"></script>
 </head>
-<body class="theme-light" data-mode="search">
-  <div id="mapFrame" class="map-frame">
-    <div id="map"></div>
-
-    <header class="topbar glass">
-      <div class="brand-lockup">
-        <div class="brand-mark">v</div>
-        <div>
-          <div class="brand-title">vehitrack</div>
-          <div id="mapStatus" class="micro muted">Loading map…</div>
+<body>
+  <div id="app">
+    <div id="map" aria-label="Map"></div>
+    <div class="top-stack">
+      <section id="navBanner" class="nav-banner hidden" aria-live="polite">
+        <div class="nav-banner-left">
+          <div class="nav-chip">
+            <span class="nav-chip-label">SPEED</span>
+            <span id="speedLimitValue" class="nav-chip-value">—</span>
+          </div>
+          <div class="nav-main">
+            <div id="nextInstruction" class="nav-instruction">—</div>
+            <div id="navStatus" class="nav-status">Route guidance idle.</div>
+          </div>
         </div>
-      </div>
-
-      <form id="searchForm" class="search-form">
-        <div class="search-input-wrap">
-          <input id="searchInput" type="text" placeholder="Search address or place" autocomplete="off" />
-          <button id="clearSearchBtn" type="button" class="ghost-btn small-btn">Clear</button>
+        <div class="nav-banner-right">
+          <div class="nav-metrics">
+            <div class="nav-metric"><span class="nav-metric-label">In</span><span id="nextDistance">—</span></div>
+            <div class="nav-metric"><span class="nav-metric-label">Remain</span><span id="remainingDistance">—</span></div>
+            <div class="nav-metric"><span class="nav-metric-label">ETA</span><span id="remainingEta">—</span></div>
+          </div>
+          <button id="endRouteBtn" class="btn btn-danger">End Route</button>
         </div>
-        <button id="searchBtn" type="submit">Search</button>
-      </form>
-
-      <div class="topbar-actions">
-        <div id="destinationChip" class="destination-chip">No destination</div>
-        <button id="toolsToggleBtn" type="button" class="ghost-btn">Tools</button>
-      </div>
-    </header>
-
-    <section id="searchPanel" class="search-panel glass">
-      <div class="section-head">
-        <div>
-          <div class="section-title">Destination search</div>
-          <div id="searchStatus" class="micro muted">Offline search is ready when Nominatim is running.</div>
+      </section>
+      <section class="search-shell glass">
+        <div class="search-row">
+          <button id="toolsToggleBtn" class="icon-btn" title="Tools">☰</button>
+          <input id="searchInput" type="text" autocomplete="off" placeholder="Search for an address or place">
+          <button id="favoriteSelectedBtn" class="icon-btn" title="Save selected destination">★</button>
+          <button id="clearSearchBtn" class="btn btn-subtle">Clear</button>
+          <button id="searchBtn" class="btn btn-primary">Search</button>
         </div>
-      </div>
-      <div id="searchResults" class="results"></div>
-    </section>
-
-    <section id="navBanner" class="nav-banner glass">
-      <div class="nav-primary-wrap">
-        <div id="speedLimitSign" class="speed-limit-sign" aria-label="Current speed limit">
-          <div class="sign-top">SPEED</div>
-          <div class="sign-top">LIMIT</div>
-          <div id="speedLimitValue" class="sign-value">—</div>
+        <div class="search-meta-row">
+          <div id="selectedDestination" class="selected-destination">Destination: —</div>
+          <div id="searchStatus" class="search-status">Offline search is ready when Nominatim is running.</div>
         </div>
-        <div class="nav-primary">
-          <div class="micro muted">Next maneuver</div>
-          <div id="nextInstruction" class="nav-instruction">—</div>
-          <div id="navStatus" class="micro muted">Route guidance idle.</div>
-        </div>
-      </div>
-      <div class="nav-metrics">
-        <div class="metric-pill big">
-          <span>In</span>
-          <strong id="nextDistance">—</strong>
-        </div>
-        <div class="metric-pill">
-          <span>Remain</span>
-          <strong id="remainingDistance">—</strong>
-        </div>
-        <div class="metric-pill">
-          <span>ETA</span>
-          <strong id="remainingEta">—</strong>
-        </div>
-        <button id="endRouteBtn" type="button" class="ghost-btn end-route-btn">End Route</button>
-      </div>
-    </section>
-
-    <section id="routeCard" class="route-card glass">
+        <div id="searchResults" class="search-results"></div>
+      </section>
+      <section id="gpsStrip" class="gps-strip glass">
+        <div class="gps-pill"><span class="gps-label">Fix</span><span id="fixValue">—</span></div>
+        <div class="gps-pill"><span class="gps-label">Speed</span><span id="speedValue">—</span></div>
+        <div class="gps-pill"><span class="gps-label">Sats</span><span id="satsValue">—</span></div>
+        <div class="gps-pill"><span class="gps-label">HDOP</span><span id="hdopValue">—</span></div>
+        <div class="gps-pill"><span class="gps-label">Age</span><span id="ageValue">—</span></div>
+        <div class="gps-pill"><span class="gps-label">Trip</span><span id="tripValue">—</span></div>
+      </section>
+    </div>
+    <section id="routePreview" class="route-card glass hidden">
       <div class="route-card-head">
         <div>
-          <div class="section-title">Route</div>
-          <div id="selectedDestination" class="micro muted">Destination: —</div>
+          <div class="route-card-title">Route</div>
+          <div id="routeStatus" class="route-status">Select a destination to build a route.</div>
         </div>
-        <div class="route-card-metrics">
-          <div class="metric-tile">
-            <span>Distance</span>
-            <strong id="routeDistance">—</strong>
-          </div>
-          <div class="metric-tile">
-            <span>Drive time</span>
-            <strong id="routeDuration">—</strong>
-          </div>
-        </div>
+        <button id="clearRouteBtn" class="btn btn-subtle">Clear Route</button>
       </div>
-
-      <div id="routeStatus" class="micro muted">Select a destination to build a route.</div>
-      <div id="routeMeta" class="micro muted route-meta">Current GPS position → selected destination.</div>
-
+      <div class="route-card-grid">
+        <div class="route-stat"><span class="route-stat-label">Destination</span><span id="routeDestinationLabel">—</span></div>
+        <div class="route-stat"><span class="route-stat-label">Distance</span><span id="routeDistance">—</span></div>
+        <div class="route-stat"><span class="route-stat-label">Drive time</span><span id="routeDuration">—</span></div>
+      </div>
+      <div id="routeMeta" class="route-meta">Current GPS position → selected destination.</div>
       <div class="route-actions">
-        <button id="routeBtn" type="button">Route to Destination</button>
-        <button id="clearRouteBtn" type="button" class="ghost-btn">Clear Route</button>
+        <button id="previewRouteBtn" class="btn btn-subtle">Preview Route</button>
+        <button id="confirmRouteBtn" class="btn btn-primary">Route to Destination</button>
       </div>
     </section>
-
-    <div class="floating-actions glass-stack">
-      <button id="followBtn" type="button">Follow</button>
-      <button id="overviewBtn" type="button" class="ghost-btn">Overview</button>
-      <button id="stepsToggleBtn" type="button" class="ghost-btn">Steps</button>
+    <div id="floatingButtons" class="floating-buttons">
+      <button id="followBtn" class="floating-btn">Follow</button>
+      <button id="overviewBtn" class="floating-btn">Overview</button>
+      <button id="stepsBtn" class="floating-btn">Steps</button>
     </div>
-
-    <div class="status-strip glass">
-      <div class="metric-pill compact"><span>Fix</span><strong id="fixv">—</strong></div>
-      <div class="metric-pill compact"><span>Speed</span><strong id="speedv">—</strong></div>
-      <div class="metric-pill compact"><span>Sats</span><strong id="satsv">—</strong></div>
-      <div class="metric-pill compact"><span>HDOP</span><strong id="hdopv">—</strong></div>
-      <div class="metric-pill compact"><span>Age</span><strong id="agev">—</strong></div>
-      <div class="metric-pill compact"><span>Trip</span><strong id="tripv">—</strong></div>
-    </div>
-
-    <aside id="stepsDrawer" class="steps-drawer glass">
+    <section id="stepsPanel" class="steps-panel glass hidden">
+      <div class="steps-head">
+        <div>
+          <div class="steps-title">Turn-by-turn</div>
+          <div class="steps-subtitle">Full route steps</div>
+        </div>
+        <button id="closeStepsBtn" class="btn btn-subtle">Close</button>
+      </div>
+      <div id="stepList" class="step-list">No route loaded.</div>
+    </section>
+    <aside id="toolsDrawer" class="tools-drawer glass hidden">
       <div class="drawer-head">
         <div>
-          <div class="section-title">Turn-by-turn</div>
-          <div class="micro muted">Full route steps</div>
+          <div class="drawer-title">Tools</div>
+          <div class="drawer-subtitle">Trip controls, theme, diagnostics, and saved places</div>
         </div>
-        <button id="closeStepsBtn" type="button" class="ghost-btn small-btn">Close</button>
+        <button id="closeToolsBtn" class="btn btn-subtle">Close</button>
       </div>
-      <div id="stepsList" class="steps-list">
-        <div class="muted micro">No route loaded.</div>
+      <div class="drawer-section">
+        <div class="drawer-section-title">Trip</div>
+        <div class="btn-row">
+          <button id="startBtn" class="btn btn-subtle">Start Trip</button>
+          <button id="stopBtn" class="btn btn-subtle">Stop Trip</button>
+        </div>
+        <div class="btn-row">
+          <button id="csvBtn" class="btn btn-subtle">CSV</button>
+          <button id="gpxBtn" class="btn btn-subtle">GPX</button>
+          <button id="kmlBtn" class="btn btn-subtle">KML</button>
+        </div>
+      </div>
+      <div class="drawer-section">
+        <div class="drawer-section-title">Map theme</div>
+        <div class="btn-row">
+          <button class="btn btn-theme" data-theme="light">Light</button>
+          <button class="btn btn-theme" data-theme="dark">Dark</button>
+          <button class="btn btn-theme" data-theme="amethyst">Amethyst</button>
+        </div>
+        <div class="btn-row">
+          <button id="satelliteBtn" class="btn btn-subtle">Satellite N/A</button>
+        </div>
+      </div>
+      <div class="drawer-section">
+        <div class="drawer-section-title">Favorites</div>
+        <div id="favoritesList" class="saved-list empty">No favorites saved yet.</div>
+      </div>
+      <div class="drawer-section">
+        <div class="drawer-section-title">Recent destinations</div>
+        <div class="drawer-tools-row"><button id="clearHistoryBtn" class="btn btn-subtle btn-small">Clear History</button></div>
+        <div id="historyList" class="saved-list empty">No recent destinations yet.</div>
+      </div>
+      <div class="drawer-section">
+        <div class="drawer-section-title">Vehicle + GPS</div>
+        <div class="diagnostics-grid">
+          <div class="diag-cell"><span class="diag-label">Fix</span><span id="diagFix">—</span></div>
+          <div class="diag-cell"><span class="diag-label">Speed</span><span id="diagSpeed">—</span></div>
+          <div class="diag-cell"><span class="diag-label">Sats</span><span id="diagSats">—</span></div>
+          <div class="diag-cell"><span class="diag-label">HDOP</span><span id="diagHdop">—</span></div>
+          <div class="diag-cell"><span class="diag-label">Age</span><span id="diagAge">—</span></div>
+          <div class="diag-cell"><span class="diag-label">Trip</span><span id="diagTrip">—</span></div>
+        </div>
+        <div class="drawer-info-line">Position: <span id="diagPosition">—</span></div>
+        <div class="drawer-info-line">Reason: <span id="diagReason">—</span></div>
+        <div class="drawer-info-line">Map: <span id="mapStatus">Loading map…</span></div>
       </div>
     </aside>
-
-    <aside id="toolsDrawer" class="tools-drawer glass">
-      <div class="drawer-head sticky">
+    <section id="completionPanel" class="completion-panel glass hidden">
+      <div class="completion-head">
         <div>
-          <div class="section-title">Tools</div>
-          <div class="micro muted">Trip controls, theme, and diagnostics</div>
+          <div id="completionTitle" class="completion-title">Route complete</div>
+          <div id="completionSubtitle" class="completion-subtitle">Trip summary</div>
         </div>
-        <button id="closeToolsBtn" type="button" class="ghost-btn small-btn">Close</button>
+        <button id="closeCompletionBtn" class="btn btn-subtle">Close</button>
       </div>
-
-      <div class="drawer-block">
-        <div class="section-title small-title">Trip</div>
-        <div class="button-grid two-up">
-          <button id="startBtn" type="button">Start Trip</button>
-          <button id="stopBtn" type="button" class="ghost-btn">Stop Trip</button>
-        </div>
-        <div class="button-grid three-up top-gap">
-          <button id="csvBtn" type="button" class="ghost-btn">CSV</button>
-          <button id="gpxBtn" type="button" class="ghost-btn">GPX</button>
-          <button id="kmlBtn" type="button" class="ghost-btn">KML</button>
-        </div>
+      <div class="completion-grid">
+        <div class="completion-stat"><span class="completion-label">Actual drive time</span><span id="completionDriveTime">—</span></div>
+        <div class="completion-stat"><span class="completion-label">Avg speed</span><span id="completionAvgSpeed">—</span></div>
+        <div class="completion-stat"><span class="completion-label">Moving avg speed</span><span id="completionMovingAvgSpeed">—</span></div>
+        <div class="completion-stat"><span class="completion-label">Max speed</span><span id="completionMaxSpeed">—</span></div>
+        <div class="completion-stat"><span class="completion-label">Distance traveled</span><span id="completionDistance">—</span></div>
+        <div class="completion-stat"><span class="completion-label">Planned route</span><span id="completionPlannedDistance">—</span></div>
       </div>
-
-      <div class="drawer-block">
-        <div class="section-title small-title">Map theme</div>
-        <div class="button-grid three-up">
-          <button type="button" data-theme="light" class="ghost-btn">Light</button>
-          <button type="button" data-theme="dark" class="ghost-btn">Dark</button>
-          <button type="button" data-theme="amethyst" class="ghost-btn">Amethyst</button>
-        </div>
-        <button id="satelliteBtn" type="button" class="ghost-btn full-width top-gap">Satellite N/A</button>
-      </div>
-
-      <div class="drawer-block">
-        <div class="section-title small-title">Vehicle + GPS</div>
-        <div class="stats-grid compact-grid">
-          <div class="stat-card"><div class="stat-label">Fix</div><div id="fixv_tools" class="stat-value">—</div></div>
-          <div class="stat-card"><div class="stat-label">Speed</div><div id="speedv_tools" class="stat-value">—</div></div>
-          <div class="stat-card"><div class="stat-label">Sats</div><div id="satsv_tools" class="stat-value">—</div></div>
-          <div class="stat-card"><div class="stat-label">HDOP</div><div id="hdopv_tools" class="stat-value">—</div></div>
-          <div class="stat-card"><div class="stat-label">Age</div><div id="agev_tools" class="stat-value">—</div></div>
-          <div class="stat-card"><div class="stat-label">Trip</div><div id="tripv_tools" class="stat-value">—</div></div>
-        </div>
-        <div class="info-panel top-gap">
-          <div id="posv">Position: —</div>
-          <div id="reasonv">Reason: —</div>
-        </div>
-      </div>
-    </aside>
+      <div id="completionMeta" class="completion-meta">—</div>
+    </section>
   </div>
-
-  <script src="/static/app.js?v=ui8"></script>
 </body>
 </html>
